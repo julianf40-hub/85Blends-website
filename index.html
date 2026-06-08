@@ -63,7 +63,8 @@
     .nav-links a:hover { color: var(--text); }
 
     .nav-actions { display: flex; align-items: center; gap: 12px; }
-
+    .btn-ghost { background: none; border: none; cursor: pointer; font-family: inherit; font-size: 15px; font-weight: 500; color: var(--gray); padding: 8px 16px; border-radius: 8px; transition: color .2s; }
+    .btn-ghost:hover { color: var(--text); }
     .btn-primary {
       display: flex; align-items: center; gap: 8px;
       background: var(--blue); color: var(--white);
@@ -189,7 +190,26 @@
     .feature-link { font-size: 14px; font-weight: 600; color: var(--blue); text-decoration: none; display: flex; align-items: center; gap: 5px; }
     .feature-link:hover { gap: 8px; }
 
-    /* thumb CSS removed — feature cards no longer use mockups */
+    .feature-thumb {
+      width: 100%; border-radius: 10px; margin-top: 18px;
+      background: var(--navy); overflow: hidden;
+      aspect-ratio: 9/16; max-height: 180px;
+      display: flex; align-items: flex-start; padding: 12px;
+      flex-direction: column; gap: 6px;
+    }
+    .thumb-label { font-size: 10px; font-weight: 700; color: var(--gold); font-family: 'Space Mono', monospace; }
+    .thumb-bar {
+      height: 6px; border-radius: 3px; background: #1F2937; width: 100%; overflow: hidden;
+    }
+    .thumb-bar-fill { height: 100%; border-radius: 3px; background: var(--blue); }
+    .thumb-pill {
+      display: flex; gap: 4px;
+    }
+    .thumb-pill span {
+      padding: 3px 8px; border-radius: 4px; font-size: 9px; font-weight: 700;
+      background: #1F2937; color: #6B7280;
+    }
+    .thumb-pill span.active { background: var(--blue); color: white; }
 
     /* ─── BOTTOM TRUST ───────────────────────── */
     /* ─── WHY SECTION ────────────────────────── */
@@ -391,6 +411,7 @@
     @media (max-width: 600px) {
       nav { padding: 0 16px; }
       .nav-links { display: none; }
+      .btn-ghost { display: none; }
       .hero-left { padding: 40px 20px; }
       .hero-ctas { flex-direction: column; align-items: flex-start; }
       .features-section { padding: 48px 16px 0; }
@@ -404,6 +425,144 @@
       .footer-links { flex-wrap: wrap; gap: 28px; }
     }
 
+
+    /* ─── BLEND COST CALCULATOR ─────────────── */
+    .blend-calc-section {
+      padding: 80px;
+      background: #F8FAFF;
+      border-top: 1.5px solid #E5E7EB;
+    }
+    .blend-calc-container { max-width: 1100px; margin: 0 auto; }
+    .blend-calc-eyebrow {
+      font-size: 12px; font-weight: 700; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--blue); margin-bottom: 10px;
+    }
+    .blend-calc-title {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: clamp(32px, 4vw, 48px); color: var(--text);
+      line-height: 1; margin-bottom: 12px;
+    }
+    .blend-calc-desc { font-size: 16px; color: var(--gray); margin-bottom: 40px; max-width: 520px; }
+    .blend-calc-body {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: start;
+    }
+    .blend-calc-inputs {
+      background: var(--white); border-radius: 20px;
+      border: 1.5px solid #E5E7EB; padding: 32px;
+      display: flex; flex-direction: column; gap: 24px;
+    }
+    .bc-field { display: flex; flex-direction: column; gap: 6px; }
+    .bc-label {
+      font-size: 13px; font-weight: 600; color: var(--text);
+    }
+    .bc-note { font-size: 11px; color: var(--gray); margin-top: 4px; }
+    .bc-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .bc-input-wrap { position: relative; }
+    .bc-input-wrap input {
+      width: 100%; padding: 11px 40px 11px 14px;
+      border: 1.5px solid #E5E7EB; border-radius: 10px;
+      font-size: 15px; font-family: inherit; color: var(--text);
+      background: #FAFAFA; transition: border-color .2s;
+      -moz-appearance: textfield;
+    }
+    .bc-input-wrap input::-webkit-outer-spin-button,
+    .bc-input-wrap input::-webkit-inner-spin-button { -webkit-appearance: none; }
+    .bc-input-wrap input:focus { outline: none; border-color: var(--blue); background: var(--white); }
+    .bc-unit {
+      position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+      font-size: 12px; font-weight: 600; color: var(--gray); pointer-events: none;
+    }
+    .bc-sub-label { font-size: 12px; color: var(--gray); margin-bottom: 2px; }
+    /* Segmented controls */
+    .bc-seg {
+      display: flex; flex-wrap: wrap; gap: 6px;
+    }
+    .bc-seg button {
+      padding: 7px 14px; border-radius: 8px; border: 1.5px solid #E5E7EB;
+      background: var(--white); color: var(--gray);
+      font-size: 13px; font-weight: 600; font-family: inherit;
+      cursor: pointer; transition: all .15s;
+    }
+    .bc-seg button:hover { border-color: var(--blue); color: var(--blue); }
+    .bc-seg button.bc-active {
+      background: var(--blue); border-color: var(--blue);
+      color: var(--white);
+    }
+    .bc-custom-wrap { margin-top: 10px; display: none; }
+    .bc-custom-wrap.bc-visible { display: block; }
+    /* Results panel */
+    .blend-calc-results { display: flex; flex-direction: column; gap: 16px; }
+    .bc-result-card {
+      background: var(--white); border-radius: 20px;
+      border: 1.5px solid #E5E7EB; padding: 28px;
+    }
+    .bc-result-empty { text-align: center; padding: 40px 28px; }
+    .bc-result-empty-icon { font-size: 32px; margin-bottom: 12px; }
+    .bc-result-empty h3 { font-size: 17px; font-weight: 700; color: var(--text); margin-bottom: 8px; }
+    .bc-result-empty p { font-size: 14px; color: var(--gray); line-height: 1.6; }
+    .bc-result-blend-label {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: #EFF6FF; color: var(--blue);
+      border: 1px solid #C7D7FD; border-radius: 99px;
+      padding: 4px 12px; font-size: 12px; font-weight: 700;
+      margin-bottom: 16px;
+    }
+    .bc-result-costs {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;
+    }
+    .bc-cost-cell {
+      background: #F8FAFF; border-radius: 12px; padding: 14px;
+      border: 1px solid #E5E7EB;
+    }
+    .bc-cost-label { font-size: 11px; color: var(--gray); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+    .bc-cost-val { font-size: 24px; font-weight: 700; color: var(--text); }
+    .bc-cost-val.savings { color: #16A34A; }
+    .bc-cost-val.extra { color: #DC2626; }
+    .bc-savings-banner {
+      border-radius: 10px; padding: 12px 16px;
+      font-size: 14px; font-weight: 700; margin-bottom: 16px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .bc-savings-banner.positive { background: #F0FDF4; color: #16A34A; border: 1px solid #BBF7D0; }
+    .bc-savings-banner.negative { background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; }
+    .bc-savings-banner.neutral  { background: #F8FAFF; color: var(--blue); border: 1px solid #C7D7FD; }
+    .bc-divider { height: 1px; background: #E5E7EB; margin: 16px 0; }
+    .bc-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .bc-stat { }
+    .bc-stat-label { font-size: 11px; color: var(--gray); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 2px; }
+    .bc-stat-val { font-size: 16px; font-weight: 700; color: var(--text); }
+    .bc-disclaimer {
+      background: #FFFBF0; border: 1.5px solid #F0E8C8;
+      border-radius: 16px; padding: 20px 24px;
+    }
+    .bc-disclaimer h4 { font-size: 13px; font-weight: 700; color: #92600A; margin-bottom: 6px; }
+    .bc-disclaimer p { font-size: 13px; color: #92600A; line-height: 1.6; }
+    .bc-cta-card {
+      background: var(--navy); border-radius: 20px; padding: 28px;
+      text-align: center;
+    }
+    .bc-cta-card h3 { font-size: 16px; font-weight: 700; color: var(--white); margin-bottom: 8px; }
+    .bc-cta-card p { font-size: 14px; color: #9CA3AF; margin-bottom: 20px; line-height: 1.6; }
+    .bc-cta-btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: var(--gold); color: var(--navy);
+      padding: 12px 24px; border-radius: 10px;
+      font-size: 14px; font-weight: 700; font-family: inherit;
+      text-decoration: none; border: none; cursor: pointer;
+      transition: background .2s;
+    }
+    .bc-cta-btn:hover { background: var(--gold-lt); }
+    @media (max-width: 960px) {
+      .blend-calc-section { padding: 48px 24px; }
+      .blend-calc-body { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 600px) {
+      .blend-calc-section { padding: 40px 16px; }
+      .blend-calc-inputs { padding: 24px 20px; }
+      .bc-row { grid-template-columns: 1fr; }
+      .bc-result-costs { grid-template-columns: 1fr; }
+      .bc-stats { grid-template-columns: 1fr; }
+    }
     /* ─── FADE-IN ANIMATION ──────────────────── */
     @keyframes fadeUp {
       from { opacity: 0; transform: translateY(24px); }
@@ -426,10 +585,11 @@
   </a>
   <ul class="nav-links">
     <li><a href="#features">Features</a></li>
-    <li><a href="/privacy.html">Privacy</a></li>
-    <li><a href="mailto:support@85blends.app">Support</a></li>
+    <li><a href="#">About</a></li>
+    <li><a href="#">FAQ</a></li>
   </ul>
   <div class="nav-actions">
+    <button class="btn-ghost">Sign in</button>
     <a href="#" class="btn-primary">
       <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0 0l-4-4m4 4l4-4"/></svg>
       Coming Soon
@@ -475,7 +635,7 @@
 
 
 <!-- FEATURE SPOTLIGHT: CALCULATOR -->
-<section id="calculator" class="spotlight" style="background:#FFFBF0; border-top: 1.5px solid #F0E8C8;">
+<section class="spotlight" style="background:#FFFBF0; border-top: 1.5px solid #F0E8C8;">
   <div class="spotlight-inner flipped">
     <div class="spotlight-right">
       <img src="assets/calculator-hero.png" alt="85Blends Calculator" class="spotlight-img" style="border-radius:28px 0 0 28px;" />
@@ -514,8 +674,166 @@
   </div>
 </section>
 
+
+<!-- BLEND COST CALCULATOR -->
+<section class="blend-calc-section">
+  <div class="blend-calc-container">
+    <div class="blend-calc-eyebrow">Blend Cost Comparison</div>
+    <h2 class="blend-calc-title">Blend vs Gas</h2>
+    <p class="blend-calc-desc">Compare E85 blend cost, range impact, and estimated cost per mile against gasoline.</p>
+
+    <div class="blend-calc-body">
+      <!-- Inputs -->
+      <div class="blend-calc-inputs">
+
+        <div class="bc-field">
+          <label class="bc-label" for="bc-tank">Tank size</label>
+          <div class="bc-input-wrap">
+            <input type="number" id="bc-tank" value="18.5" min="1" max="50" step="0.5" />
+            <span class="bc-unit">gal</span>
+          </div>
+        </div>
+
+        <div class="bc-field">
+          <div class="bc-label">Fuel prices</div>
+          <div class="bc-row">
+            <div>
+              <div class="bc-sub-label">E85 per gallon</div>
+              <div class="bc-input-wrap">
+                <input type="number" id="bc-e85price" value="2.89" min="0" max="10" step="0.01" />
+                <span class="bc-unit">$</span>
+              </div>
+            </div>
+            <div>
+              <div class="bc-sub-label">Gas per gallon</div>
+              <div class="bc-input-wrap">
+                <input type="number" id="bc-gasprice" value="3.49" min="0" max="10" step="0.01" />
+                <span class="bc-unit">$</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="bc-field">
+          <div class="bc-label">Gas grade</div>
+          <div class="bc-seg" id="bc-grade">
+            <button data-val="87">87</button>
+            <button data-val="89">89</button>
+            <button data-val="91" class="bc-active">91</button>
+            <button data-val="93">93</button>
+          </div>
+          <div class="bc-note">Label only — calculations use the gas price you enter.</div>
+        </div>
+
+        <div class="bc-field">
+          <label class="bc-label" for="bc-mpg">MPG on gas</label>
+          <div class="bc-input-wrap">
+            <input type="number" id="bc-mpg" value="25" min="5" max="60" step="1" />
+            <span class="bc-unit">mpg</span>
+          </div>
+        </div>
+
+        <div class="bc-field">
+          <div class="bc-label">E85 MPG loss</div>
+          <div class="bc-seg" id="bc-mpgloss">
+            <button data-val="15">15%</button>
+            <button data-val="20">20%</button>
+            <button data-val="25" class="bc-active">25%</button>
+            <button data-val="30">30%</button>
+            <button data-val="35">35%</button>
+          </div>
+          <div class="bc-note">E85 typically reduces fuel economy 15–35%. Loss is scaled for partial blends.</div>
+        </div>
+
+        <div class="bc-field">
+          <div class="bc-label">Blend strategy</div>
+          <div class="bc-seg" id="bc-blend">
+            <button data-val="30">E30</button>
+            <button data-val="50">E50</button>
+            <button data-val="60">E60</button>
+            <button data-val="85" class="bc-active">E85</button>
+            <button data-val="custom">Custom</button>
+          </div>
+          <div class="bc-custom-wrap" id="bc-custom-wrap">
+            <div class="bc-input-wrap">
+              <input type="number" id="bc-custom" placeholder="e.g. 70" min="11" max="85" step="1" />
+              <span class="bc-unit">%</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Results -->
+      <div class="blend-calc-results" id="bc-results">
+        <div class="bc-result-card bc-result-empty" id="bc-empty">
+          <div class="bc-result-empty-icon">⛽</div>
+          <h3>Enter Values Above</h3>
+          <p>Fill in tank size, E85 price, gas price, and MPG to see your cost comparison.</p>
+        </div>
+
+        <div class="bc-result-card" id="bc-output" style="display:none;">
+          <div class="bc-result-blend-label" id="bc-blend-label">E85</div>
+          <div class="bc-result-costs">
+            <div class="bc-cost-cell">
+              <div class="bc-cost-label">Blend Cost</div>
+              <div class="bc-cost-val" id="bc-blendcost">—</div>
+            </div>
+            <div class="bc-cost-cell">
+              <div class="bc-cost-label">Gas-only Cost</div>
+              <div class="bc-cost-val" id="bc-gascost">—</div>
+            </div>
+          </div>
+          <div class="bc-savings-banner" id="bc-banner">—</div>
+          <div class="bc-divider"></div>
+          <div class="bc-stats">
+            <div class="bc-stat">
+              <div class="bc-stat-label">Gas Cost / Mile</div>
+              <div class="bc-stat-val" id="bc-gascpm">—</div>
+            </div>
+            <div class="bc-stat">
+              <div class="bc-stat-label">Blend Cost / Mile</div>
+              <div class="bc-stat-val" id="bc-blendcpm">—</div>
+            </div>
+            <div class="bc-stat">
+              <div class="bc-stat-label">Est. Blend MPG</div>
+              <div class="bc-stat-val" id="bc-blendmpg">—</div>
+            </div>
+            <div class="bc-stat">
+              <div class="bc-stat-label">Miles per Tank</div>
+              <div class="bc-stat-val" id="bc-miles">—</div>
+            </div>
+            <div class="bc-stat">
+              <div class="bc-stat-label">E85 Gallons</div>
+              <div class="bc-stat-val" id="bc-e85gal">—</div>
+            </div>
+            <div class="bc-stat">
+              <div class="bc-stat-label">Gas Gallons</div>
+              <div class="bc-stat-val" id="bc-gasgal">—</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="bc-disclaimer">
+          <h4>Estimates Only</h4>
+          <p>Actual MPG depends on tune, ethanol content, driving style, weather, and pump fuel quality. Use this as a planning estimate.</p>
+        </div>
+
+        <div class="bc-cta-card">
+          <h3>Want exact pump instructions?</h3>
+          <p>Use 85Blends on iPhone to calculate exact gallons to add, save vehicle defaults, find nearby E85, and log every fill-up.</p>
+          <a href="#" class="bc-cta-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+            Coming soon on iOS
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- FEATURE SPOTLIGHT: STATIONS -->
-<section id="stations" class="spotlight" style="border-top: 1.5px solid #E5E7EB;">
+<section class="spotlight" style="border-top: 1.5px solid #E5E7EB;">
   <div class="spotlight-inner">
     <div class="spotlight-left">
       <div>
@@ -556,7 +874,7 @@
 
 
 <!-- FEATURE SPOTLIGHT: GARAGE -->
-<section id="garage" class="spotlight" style="background:#F0F4FF; border-top: 1.5px solid #E5E7EB;">
+<section class="spotlight" style="background:#F0F4FF; border-top: 1.5px solid #E5E7EB;">
   <div class="spotlight-inner flipped">
     <div class="spotlight-right">
       <img src="assets/garage-hero.png" alt="85Blends Garage Feature" class="spotlight-img" style="border-radius:28px 0 0 28px;" />
@@ -596,7 +914,7 @@
 </section>
 
 <!-- FEATURE SPOTLIGHT: FUEL LOG -->
-<section id="fuel-log" class="spotlight" style="border-top: 1.5px solid #E5E7EB;">
+<section class="spotlight" style="border-top: 1.5px solid #E5E7EB;">
   <div class="spotlight-inner">
     <div class="spotlight-left">
       <div>
@@ -636,7 +954,7 @@
 </section>
 
 <!-- FEATURE SPOTLIGHT: REMINDERS -->
-<section id="reminders" class="spotlight" style="border-top: 1.5px solid #E5E7EB;">
+<section class="spotlight" style="border-top: 1.5px solid #E5E7EB;">
   <div class="spotlight-inner">
     <div class="spotlight-left">
       <div>
@@ -679,8 +997,8 @@
 <section id="features">
 <div class="features-section">
   <div class="features-section-hdr">
-    <div class="features-section-eyebrow">App toolkit</div>
-    <div class="features-section-title">Everything for smarter E85 fueling</div>
+    <div class="features-section-eyebrow">Everything you need</div>
+    <div class="features-section-title">Everything You Need</div>
   </div>
 </div>
 <div class="features-strip">
@@ -688,36 +1006,84 @@
   <div class="feature-card">
     <div class="feature-icon icon-blue">🧮</div>
     <div class="feature-title">Calculator</div>
-    <div class="feature-desc">Calculate your target ethanol blend and see exactly how many gallons to add.</div>
-    <a href="#calculator" class="feature-link">See it in action →</a>
+    <div class="feature-desc">Calculate your target ethanol blend and see how many gallons to add before you pump.</div>
+    <a href="#" class="feature-link">Calculate blend →</a>
+    <div class="feature-thumb">
+      <div class="thumb-label">E85 Calculator</div>
+      <div class="thumb-pill">
+        <span>E20</span><span class="active">E30</span><span>E40</span><span>E50</span><span>E60</span><span>E85</span>
+      </div>
+      <div class="thumb-bar"><div class="thumb-bar-fill" style="width:55%"></div></div>
+      <div style="font-size:9px; color:#9CA3AF; margin-top:4px;">Target: E60 · Add 4.2 gal E85</div>
+    </div>
   </div>
 
   <div class="feature-card">
     <div class="feature-icon icon-gold">📍</div>
     <div class="feature-title">Stations</div>
-    <div class="feature-desc">Find nearby E85 stations, check saved locations, and view community fuel price updates.</div>
-    <a href="#stations" class="feature-link">Find stations →</a>
+    <div class="feature-desc">Find nearby E85 stations and view station details, distance, and community fuel price updates.</div>
+    <a href="#" class="feature-link">Find stations →</a>
+    <div class="feature-thumb">
+      <div class="thumb-label">E85 Stations</div>
+      <div style="display:flex;gap:5px;margin-top:4px;">
+        <div style="flex:1;background:#1F2937;border-radius:6px;height:60px;display:flex;align-items:center;justify-content:center;font-size:8px;color:#6B7280;">Map</div>
+      </div>
+      <div class="thumb-bar" style="margin-top:6px;"><div class="thumb-bar-fill" style="width:80%;background:#F5A800;"></div></div>
+      <div style="font-size:9px; color:#9CA3AF; margin-top:4px;">12 stations within 10 miles</div>
+    </div>
   </div>
 
   <div class="feature-card">
     <div class="feature-icon icon-blue">🚗</div>
     <div class="feature-title">Garage</div>
-    <div class="feature-desc">Save vehicle profiles, tank size, octane, odometer, and preferred ethanol targets.</div>
-    <a href="#garage" class="feature-link">Manage garage →</a>
+    <div class="feature-desc">Save your vehicles, preferred ethanol targets, tank size, and setup details in one place.</div>
+    <a href="#" class="feature-link">Manage garage →</a>
+    <div class="feature-thumb">
+      <div class="thumb-label">My Garage</div>
+      <div style="background:#1F2937;border-radius:6px;padding:8px;margin-top:4px;">
+        <div style="font-size:10px;color:white;font-weight:700;">BabyDemon170</div>
+        <div style="font-size:8px;color:#F5A800;margin-top:2px;">Flex Fuel · E60 Target</div>
+      </div>
+      <div style="background:#1a2540;border-radius:6px;padding:8px;margin-top:4px;border:1px dashed #374151;text-align:center;">
+        <div style="font-size:8px;color:#6B7280;">+ Add Vehicle</div>
+      </div>
+    </div>
   </div>
 
   <div class="feature-card">
     <div class="feature-icon icon-blue">⛽</div>
     <div class="feature-title">Fuel Log</div>
-    <div class="feature-desc">Track fill-ups, ethanol mix, gallons, price, mileage, MPG, and fuel cost over time.</div>
-    <a href="#fuel-log" class="feature-link">View fuel log →</a>
+    <div class="feature-desc">Track fill-ups, ethanol mix, gallons, price, mileage, and fuel history over time.</div>
+    <a href="#" class="feature-link">View fuel log →</a>
+    <div class="feature-thumb">
+      <div class="thumb-label">Fuel Log</div>
+      <div style="background:#1F2937;border-radius:6px;padding:8px;margin-top:4px;">
+        <div style="font-size:9px;color:#9CA3AF;">Last Fill-up</div>
+        <div style="font-size:11px;color:white;font-weight:700;">8.4 gal · E60 · $3.12/gal</div>
+      </div>
+      <div style="background:#1F2937;border-radius:6px;padding:8px;margin-top:4px;">
+        <div style="font-size:9px;color:#9CA3AF;">Avg Ethanol</div>
+        <div style="font-size:11px;color:#F5A800;font-weight:700;">E57 over last 30 days</div>
+      </div>
+    </div>
   </div>
 
   <div class="feature-card">
     <div class="feature-icon icon-gold">🔔</div>
     <div class="feature-title">Reminders</div>
-    <div class="feature-desc">Set mileage or date-based reminders for service, maintenance, and recurring vehicle tasks.</div>
-    <a href="#reminders" class="feature-link">View reminders →</a>
+    <div class="feature-desc">Set reminders for fuel-ups, service intervals, and vehicle maintenance.</div>
+    <a href="#" class="feature-link">View reminders →</a>
+    <div class="feature-thumb">
+      <div class="thumb-label">Reminders</div>
+      <div style="background:#1F2937;border-radius:6px;padding:8px;margin-top:4px;">
+        <div style="font-size:9px;color:#9CA3AF;">Next Service</div>
+        <div style="font-size:11px;color:white;font-weight:700;">Oil Change · 312 mi</div>
+      </div>
+      <div style="background:#1F2937;border-radius:6px;padding:8px;margin-top:4px;">
+        <div style="font-size:9px;color:#9CA3AF;">Fuel Reminder</div>
+        <div style="font-size:11px;color:#F5A800;font-weight:700;">Fill-up tonight</div>
+      </div>
+    </div>
   </div>
 
 </div>
@@ -774,25 +1140,26 @@
       <div class="footer-col">
         <h4>App</h4>
         <ul>
-          <li><a href="#calculator">Calculator</a></li>
-          <li><a href="#stations">Stations</a></li>
-          <li><a href="#garage">Garage</a></li>
-          <li><a href="#fuel-log">Fuel Log</a></li>
-          <li><a href="#reminders">Reminders</a></li>
+          <li><a href="#">Calculator</a></li>
+          <li><a href="#">Stations</a></li>
+          <li><a href="#">Garage</a></li>
+          <li><a href="#">Fuel Log</a></li>
+          <li><a href="#">Reminders</a></li>
         </ul>
       </div>
       <div class="footer-col">
         <h4>Company</h4>
         <ul>
-          <li><a href="mailto:support@85blends.app">Support</a></li>
-          <li><a href="mailto:support@85blends.app">Contact</a></li>
+          <li><a href="#">About</a></li>
+          <li><a href="#">FAQ</a></li>
+          <li><a href="#">Contact</a></li>
         </ul>
       </div>
       <div class="footer-col">
         <h4>Legal</h4>
         <ul>
-          <li><a href="/privacy.html">Privacy Policy</a></li>
-          <li><a href="/terms.html">Terms of Use</a></li>
+          <li><a href="#">Privacy Policy</a></li>
+          <li><a href="#">Terms of Use</a></li>
         </ul>
       </div>
     </div>
@@ -802,6 +1169,116 @@
     <span style="color:#374151;">Smarter fuel. Better blends.</span>
   </div>
 </footer>
+
+
+<script>
+(function () {
+  // State
+  var state = { grade: '91', mpgLoss: 25, blend: 85, customVal: null };
+
+  // Segmented button groups
+  function initSeg(groupId, stateKey, onChange) {
+    var group = document.getElementById(groupId);
+    group.querySelectorAll('button').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        group.querySelectorAll('button').forEach(function (b) { b.classList.remove('bc-active'); });
+        btn.classList.add('bc-active');
+        var v = btn.getAttribute('data-val');
+        state[stateKey] = v === 'custom' ? 'custom' : parseFloat(v);
+        if (onChange) onChange(v);
+        calculate();
+      });
+    });
+  }
+
+  initSeg('bc-grade', 'grade', null);
+  initSeg('bc-mpgloss', 'mpgLoss', null);
+  initSeg('bc-blend', 'blend', function (v) {
+    var wrap = document.getElementById('bc-custom-wrap');
+    wrap.classList.toggle('bc-visible', v === 'custom');
+  });
+
+  // Live inputs
+  ['bc-tank','bc-e85price','bc-gasprice','bc-mpg','bc-custom'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener('input', calculate);
+  });
+
+  function fmt$(n) { return '$' + n.toFixed(2); }
+  function fmt1(n) { return n.toFixed(1); }
+  function fmt2(n) { return n.toFixed(2); }
+
+  function calculate() {
+    var tankSize  = parseFloat(document.getElementById('bc-tank').value);
+    var e85Price  = parseFloat(document.getElementById('bc-e85price').value);
+    var gasPrice  = parseFloat(document.getElementById('bc-gasprice').value);
+    var gasMpg    = parseFloat(document.getElementById('bc-mpg').value);
+    var mpgLoss   = state.mpgLoss;
+
+    var targetEthanol;
+    if (state.blend === 'custom') {
+      var cv = parseFloat(document.getElementById('bc-custom').value);
+      targetEthanol = isNaN(cv) ? null : Math.min(85, Math.max(11, cv));
+    } else {
+      targetEthanol = state.blend;
+    }
+
+    var empty = document.getElementById('bc-empty');
+    var output = document.getElementById('bc-output');
+
+    if (isNaN(tankSize) || isNaN(e85Price) || isNaN(gasPrice) || isNaN(gasMpg) || targetEthanol === null) {
+      empty.style.display = ''; output.style.display = 'none'; return;
+    }
+
+    // Calculations
+    var e85Gallons = tankSize * ((targetEthanol - 10) / (85 - 10));
+    e85Gallons = Math.max(0, Math.min(tankSize, e85Gallons));
+    var gasGallons   = tankSize - e85Gallons;
+    var blendCost    = (e85Gallons * e85Price) + (gasGallons * gasPrice);
+    var gasCost      = tankSize * gasPrice;
+    var blendMpg     = gasMpg * (1 - (mpgLoss / 100) * (targetEthanol / 85));
+    var gasCpm       = gasPrice / gasMpg;
+    var blendCpm     = blendCost / (blendMpg * tankSize);
+    var savingsPerTank = gasCost - blendCost;
+    var savingsPerMile = gasCpm - blendCpm;
+    var milesPerTank = blendMpg * tankSize;
+
+    // Label
+    var blendLabel = state.blend === 'custom' ? ('E' + Math.round(targetEthanol)) : ('E' + state.blend);
+    document.getElementById('bc-blend-label').textContent = blendLabel + ' Blend';
+
+    // Costs
+    document.getElementById('bc-blendcost').textContent = fmt$(blendCost);
+    document.getElementById('bc-gascost').textContent   = fmt$(gasCost);
+
+    // Banner
+    var banner = document.getElementById('bc-banner');
+    if (Math.abs(savingsPerTank) < 0.10) {
+      banner.textContent = '≈ Estimated cost is about even.';
+      banner.className = 'bc-savings-banner neutral';
+    } else if (savingsPerTank > 0) {
+      banner.textContent = '✓ Estimated savings: ' + fmt$(savingsPerTank) + ' per tank';
+      banner.className = 'bc-savings-banner positive';
+    } else {
+      banner.textContent = '↑ Estimated extra cost: ' + fmt$(-savingsPerTank) + ' per tank';
+      banner.className = 'bc-savings-banner negative';
+    }
+
+    // Stats
+    document.getElementById('bc-gascpm').textContent   = fmt$(gasCpm) + '/mi';
+    document.getElementById('bc-blendcpm').textContent = fmt$(blendCpm) + '/mi';
+    document.getElementById('bc-blendmpg').textContent = fmt1(blendMpg) + ' mpg';
+    document.getElementById('bc-miles').textContent    = Math.round(milesPerTank) + ' mi';
+    document.getElementById('bc-e85gal').textContent   = fmt2(e85Gallons) + ' gal';
+    document.getElementById('bc-gasgal').textContent   = fmt2(gasGallons) + ' gal';
+
+    empty.style.display = 'none';
+    output.style.display = '';
+  }
+
+  calculate();
+})();
+</script>
 
 </body>
 </html>
