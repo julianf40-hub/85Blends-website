@@ -187,26 +187,6 @@
     .feature-link { font-size: 14px; font-weight: 600; color: var(--blue); text-decoration: none; display: flex; align-items: center; gap: 5px; }
     .feature-link:hover { gap: 8px; }
 
-    .feature-thumb {
-      width: 100%; border-radius: 10px; margin-top: 18px;
-      background: var(--navy); overflow: hidden;
-      aspect-ratio: 9/16; max-height: 180px;
-      display: flex; align-items: flex-start; padding: 12px;
-      flex-direction: column; gap: 6px;
-    }
-    .thumb-label { font-size: 10px; font-weight: 700; color: var(--gold); font-family: 'Space Mono', monospace; }
-    .thumb-bar {
-      height: 6px; border-radius: 3px; background: #1F2937; width: 100%; overflow: hidden;
-    }
-    .thumb-bar-fill { height: 100%; border-radius: 3px; background: var(--blue); }
-    .thumb-pill {
-      display: flex; gap: 4px;
-    }
-    .thumb-pill span {
-      padding: 3px 8px; border-radius: 4px; font-size: 9px; font-weight: 700;
-      background: #1F2937; color: #6B7280;
-    }
-    .thumb-pill span.active { background: var(--blue); color: white; }
 
     /* ─── BOTTOM TRUST ───────────────────────── */
     /* ─── WHY SECTION ────────────────────────── */
@@ -725,8 +705,8 @@
 <section id="features">
 <div class="features-section">
   <div class="features-section-hdr">
-    <div class="features-section-eyebrow">Everything you need</div>
-    <div class="features-section-title">Everything You Need</div>
+    <div class="features-section-eyebrow">App toolkit</div>
+    <div class="features-section-title">Everything for smarter E85 fueling</div>
   </div>
 </div>
 <div class="features-strip">
@@ -734,84 +714,36 @@
   <div class="feature-card">
     <div class="feature-icon icon-blue">🧮</div>
     <div class="feature-title">Calculator</div>
-    <div class="feature-desc">Calculate your target ethanol blend and see how many gallons to add before you pump.</div>
-    <a href="#" class="feature-link">Calculate blend →</a>
-    <div class="feature-thumb">
-      <div class="thumb-label">E85 Calculator</div>
-      <div class="thumb-pill">
-        <span>E20</span><span class="active">E30</span><span>E40</span><span>E50</span><span>E60</span><span>E85</span>
-      </div>
-      <div class="thumb-bar"><div class="thumb-bar-fill" style="width:55%"></div></div>
-      <div style="font-size:9px; color:#9CA3AF; margin-top:4px;">Target: E60 · Add 4.2 gal E85</div>
-    </div>
+    <div class="feature-desc">Calculate your target ethanol blend and see exactly how many gallons to add.</div>
+    <a href="#calculator" class="feature-link">See it in action →</a>
   </div>
 
   <div class="feature-card">
     <div class="feature-icon icon-gold">📍</div>
     <div class="feature-title">Stations</div>
-    <div class="feature-desc">Find nearby E85 stations and view station details, distance, and community fuel price updates.</div>
-    <a href="#" class="feature-link">Find stations →</a>
-    <div class="feature-thumb">
-      <div class="thumb-label">E85 Stations</div>
-      <div style="display:flex;gap:5px;margin-top:4px;">
-        <div style="flex:1;background:#1F2937;border-radius:6px;height:60px;display:flex;align-items:center;justify-content:center;font-size:8px;color:#6B7280;">Map</div>
-      </div>
-      <div class="thumb-bar" style="margin-top:6px;"><div class="thumb-bar-fill" style="width:80%;background:#F5A800;"></div></div>
-      <div style="font-size:9px; color:#9CA3AF; margin-top:4px;">12 stations within 10 miles</div>
-    </div>
+    <div class="feature-desc">Find nearby E85 stations, check saved locations, and view community fuel price updates.</div>
+    <a href="#stations" class="feature-link">Find stations →</a>
   </div>
 
   <div class="feature-card">
     <div class="feature-icon icon-blue">🚗</div>
     <div class="feature-title">Garage</div>
-    <div class="feature-desc">Save your vehicles, preferred ethanol targets, tank size, and setup details in one place.</div>
-    <a href="#" class="feature-link">Manage garage →</a>
-    <div class="feature-thumb">
-      <div class="thumb-label">My Garage</div>
-      <div style="background:#1F2937;border-radius:6px;padding:8px;margin-top:4px;">
-        <div style="font-size:10px;color:white;font-weight:700;">BabyDemon170</div>
-        <div style="font-size:8px;color:#F5A800;margin-top:2px;">Flex Fuel · E60 Target</div>
-      </div>
-      <div style="background:#1a2540;border-radius:6px;padding:8px;margin-top:4px;border:1px dashed #374151;text-align:center;">
-        <div style="font-size:8px;color:#6B7280;">+ Add Vehicle</div>
-      </div>
-    </div>
+    <div class="feature-desc">Save vehicle profiles, tank size, octane, odometer, and preferred ethanol targets.</div>
+    <a href="#garage" class="feature-link">Manage garage →</a>
   </div>
 
   <div class="feature-card">
     <div class="feature-icon icon-blue">⛽</div>
     <div class="feature-title">Fuel Log</div>
-    <div class="feature-desc">Track fill-ups, ethanol mix, gallons, price, mileage, and fuel history over time.</div>
-    <a href="#" class="feature-link">View fuel log →</a>
-    <div class="feature-thumb">
-      <div class="thumb-label">Fuel Log</div>
-      <div style="background:#1F2937;border-radius:6px;padding:8px;margin-top:4px;">
-        <div style="font-size:9px;color:#9CA3AF;">Last Fill-up</div>
-        <div style="font-size:11px;color:white;font-weight:700;">8.4 gal · E60 · $3.12/gal</div>
-      </div>
-      <div style="background:#1F2937;border-radius:6px;padding:8px;margin-top:4px;">
-        <div style="font-size:9px;color:#9CA3AF;">Avg Ethanol</div>
-        <div style="font-size:11px;color:#F5A800;font-weight:700;">E57 over last 30 days</div>
-      </div>
-    </div>
+    <div class="feature-desc">Track fill-ups, ethanol mix, gallons, price, mileage, MPG, and fuel cost over time.</div>
+    <a href="#fuel-log" class="feature-link">View fuel log →</a>
   </div>
 
   <div class="feature-card">
     <div class="feature-icon icon-gold">🔔</div>
     <div class="feature-title">Reminders</div>
-    <div class="feature-desc">Set reminders for fuel-ups, service intervals, and vehicle maintenance.</div>
-    <a href="#" class="feature-link">View reminders →</a>
-    <div class="feature-thumb">
-      <div class="thumb-label">Reminders</div>
-      <div style="background:#1F2937;border-radius:6px;padding:8px;margin-top:4px;">
-        <div style="font-size:9px;color:#9CA3AF;">Next Service</div>
-        <div style="font-size:11px;color:white;font-weight:700;">Oil Change · 312 mi</div>
-      </div>
-      <div style="background:#1F2937;border-radius:6px;padding:8px;margin-top:4px;">
-        <div style="font-size:9px;color:#9CA3AF;">Fuel Reminder</div>
-        <div style="font-size:11px;color:#F5A800;font-weight:700;">Fill-up tonight</div>
-      </div>
-    </div>
+    <div class="feature-desc">Set mileage or date-based reminders for service, maintenance, and recurring vehicle tasks.</div>
+    <a href="#reminders" class="feature-link">View reminders →</a>
   </div>
 
 </div>
