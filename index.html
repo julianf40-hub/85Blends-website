@@ -77,7 +77,7 @@
     /* ─── HERO STACKED ───────────────────────── */
     .hero-stacked {
       background: var(--white);
-      padding: 80px 80px 0;
+      padding: 80px 80px 72px;
     }
     .hero-stacked-inner {
       max-width: 860px; margin: 0 auto; text-align: center;
@@ -87,11 +87,16 @@
     .hero-stacked .hero-headline { font-size: clamp(52px, 7vw, 88px); margin-bottom: 20px; }
     .hero-stacked .hero-sub { text-align: center; max-width: 540px; margin-bottom: 36px; }
     .hero-stacked .hero-ctas { justify-content: center; margin-bottom: 56px; }
-    .hero-img-wrap { width: calc(100% + 160px); margin-left: -80px; }
+    .hero-img-wrap {
+      width: calc(100vw - 160px); max-width: 1180px;
+      height: 560px; margin: 0 auto;
+      border-radius: 28px; overflow: hidden;
+      background: #EEF2F7;
+      box-shadow: 0 20px 70px rgba(15,23,42,0.10);
+    }
     .hero-main-img {
-      width: 100%; height: auto; display: block;
-      border-radius: 28px 28px 0 0;
-      box-shadow: 0 -4px 60px rgba(15,23,42,0.08);
+      width: 100%; height: 100%; display: block;
+      object-fit: cover; object-position: center top;
     }
 
     .badge {
@@ -229,26 +234,49 @@
     }
     .cta-btn:hover { background: var(--gold-lt); transform: translateY(-2px); }
 
-    /* ─── SHOWCASE SECTIONS ─────────────────── */
+    /* ─── SHOWCASE SECTIONS — unified card system ── */
+    /* Every feature card shares max-width, height, radius, shadow.
+       Images sit in a fixed-size frame and crop via object-fit:cover,
+       so uploaded image dimensions never control section height. */
     .showcase-section {
       padding: 72px 80px;
       border-top: 1.5px solid #E5E7EB;
     }
     .showcase-section:nth-child(even) { background: #F8FAFC; }
     .showcase-wrap {
-      max-width: 1280px; margin: 0 auto;
+      max-width: 1180px; margin: 0 auto;
     }
-    .showcase-img {
-      width: 100%; height: auto; display: block;
+    .showcase-frame {
+      height: 560px;
       border-radius: 28px;
+      overflow: hidden;
+      background: #EEF2F7;
       box-shadow: 0 20px 70px rgba(15,23,42,0.10);
     }
+    .showcase-img {
+      width: 100%; height: 100%; display: block;
+      object-fit: cover; object-position: center;
+    }
 
+    /* Tablet: same card system, wide 3:2 crop */
     @media (max-width: 960px) {
-      .hero-stacked { padding: 48px 24px 0; }
-      .hero-img-wrap { width: calc(100% + 48px); margin-left: -24px; }
-      .showcase-section { padding: 40px 24px; }
-      .showcase-img { border-radius: 18px; }
+      .hero-stacked { padding: 48px 24px; }
+      .hero-img-wrap, .showcase-frame {
+        width: 100%; height: auto;
+        aspect-ratio: 3 / 2;
+        border-radius: 20px;
+      }
+      .showcase-section { padding: 48px 24px; }
+    }
+    /* Mobile: stacked layout, shorter card, tall 4:5 crop */
+    @media (max-width: 600px) {
+      .hero-stacked { padding: 40px 16px; }
+      .hero-img-wrap, .showcase-frame {
+        aspect-ratio: 4 / 5;
+        max-height: 480px;
+        border-radius: 16px;
+      }
+      .showcase-section { padding: 40px 16px; }
     }
 
 
@@ -273,10 +301,6 @@
       .nav-links { display: none; }
       .hero { grid-template-columns: 1fr; min-height: auto; }
       .hero-left { padding: 48px 24px; }
-      .hero-stacked { padding: 32px 16px 0; }
-      .hero-img-wrap { width: calc(100% + 32px); margin-left: -16px; }
-      .showcase-section { padding: 32px 16px; }
-      .showcase-img { border-radius: 14px; }
       .features-section { padding: 48px 24px 0; }
       .features-strip { padding: 0 24px 48px; }
       .features-strip .feature-card { flex: 0 0 calc(50% - 12px); }
@@ -510,7 +534,7 @@
 <!-- FEATURE SHOWCASE: CALCULATOR -->
 <section id="calculator" class="showcase-section">
   <div class="showcase-wrap">
-    <img src="assets/calculator-hero.png" alt="85Blends Calculator Feature" class="showcase-img" />
+    <div class="showcase-frame"><img src="assets/calculator-hero.png" alt="85Blends Calculator Feature" class="showcase-img" /></div>
   </div>
 </section>
 
@@ -675,7 +699,7 @@
 <!-- FEATURE SHOWCASE: STATIONS -->
 <section id="stations" class="showcase-section">
   <div class="showcase-wrap">
-    <img src="assets/stations-hero.png" alt="85Blends Stations Feature" class="showcase-img" />
+    <div class="showcase-frame"><img src="assets/stations-hero.png" alt="85Blends Stations Feature" class="showcase-img" /></div>
   </div>
 </section>
 
@@ -683,21 +707,21 @@
 <!-- FEATURE SHOWCASE: GARAGE -->
 <section id="garage" class="showcase-section">
   <div class="showcase-wrap">
-    <img src="assets/garage-hero.png" alt="85Blends Garage Feature" class="showcase-img" />
+    <div class="showcase-frame"><img src="assets/garage-hero.png" alt="85Blends Garage Feature" class="showcase-img" /></div>
   </div>
 </section>
 
 <!-- FEATURE SHOWCASE: FUEL LOG -->
 <section id="fuel-log" class="showcase-section">
   <div class="showcase-wrap">
-    <img src="assets/fuel-log-hero.jpg" alt="85Blends Fuel Log Feature" class="showcase-img" />
+    <div class="showcase-frame"><img src="assets/fuel-log-hero.jpg" alt="85Blends Fuel Log Feature" class="showcase-img" /></div>
   </div>
 </section>
 
 <!-- FEATURE SHOWCASE: REMINDERS -->
 <section id="reminders" class="showcase-section">
   <div class="showcase-wrap">
-    <img src="assets/reminders-hero.jpg" alt="85Blends Reminders Feature" class="showcase-img" />
+    <div class="showcase-frame"><img src="assets/reminders-hero.jpg" alt="85Blends Reminders Feature" class="showcase-img" /></div>
   </div>
 </section>
 
