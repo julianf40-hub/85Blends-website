@@ -75,28 +75,29 @@
     .btn-primary:hover { background: var(--blue-dk); transform: translateY(-1px); }
 
     /* ─── HERO STACKED ───────────────────────── */
-    .hero-stacked {
+    /* ─── HERO TWO-COLUMN ─────────────────────── */
+    .hero-section {
       background: var(--white);
       padding: 80px 80px 72px;
+      border-bottom: 1.5px solid #E5E7EB;
     }
-    .hero-stacked-inner {
-      max-width: 860px; margin: 0 auto; text-align: center;
-      display: flex; flex-direction: column; align-items: center;
+    .hero-two-col {
+      max-width: 1180px; margin: 0 auto;
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 64px; align-items: center;
     }
-    .hero-stacked .badge { margin-bottom: 24px; }
-    .hero-stacked .hero-headline { font-size: clamp(52px, 7vw, 88px); margin-bottom: 20px; }
-    .hero-stacked .hero-sub { text-align: center; max-width: 540px; margin-bottom: 36px; }
-    .hero-stacked .hero-ctas { justify-content: center; margin-bottom: 56px; }
-    .hero-img-wrap {
-      width: calc(100vw - 160px); max-width: 1180px;
-      height: 560px; margin: 0 auto;
-      border-radius: 28px; overflow: hidden;
-      background: #EEF2F7;
-      box-shadow: 0 20px 70px rgba(15,23,42,0.10);
+    .hero-text { display: flex; flex-direction: column; align-items: flex-start; }
+    .hero-text .badge { margin-bottom: 24px; }
+    .hero-text .hero-headline { font-size: clamp(36px, 4.5vw, 60px); text-align: left; margin-bottom: 20px; }
+    .hero-text .hero-sub { text-align: left; max-width: 440px; margin-bottom: 36px; }
+    .hero-text .hero-ctas { justify-content: flex-start; margin-bottom: 0; }
+    .hero-visual {
+      display: flex; justify-content: center; align-items: center;
     }
-    .hero-main-img {
-      width: 100%; height: 100%; display: block;
-      object-fit: cover; object-position: center top;
+    .hero-visual img {
+      width: min(100%, 560px); max-height: 520px;
+      object-fit: contain; display: block;
+      filter: drop-shadow(0 20px 48px rgba(15,23,42,0.12));
     }
 
     .badge {
@@ -234,49 +235,85 @@
     }
     .cta-btn:hover { background: var(--gold-lt); transform: translateY(-2px); }
 
-    /* ─── SHOWCASE SECTIONS — unified card system ── */
-    /* Every feature card shares max-width, height, radius, shadow.
-       Images sit in a fixed-size frame and crop via object-fit:cover,
-       so uploaded image dimensions never control section height. */
+    /* ─── SHOWCASE SECTIONS — two-column feature cards ─── */
     .showcase-section {
-      padding: 72px 80px;
-      border-top: 1.5px solid #E5E7EB;
+      padding: 0 80px 72px;
     }
-    .showcase-section:nth-child(even) { background: #F8FAFC; }
-    .showcase-wrap {
+    .showcase-section:first-of-type { padding-top: 72px; }
+    .showcase-card {
       max-width: 1180px; margin: 0 auto;
-    }
-    .showcase-frame {
-      height: 560px;
-      border-radius: 28px;
+      height: 420px;
+      display: grid; grid-template-columns: 0.4fr 0.6fr;
+      align-items: center;
+      border-radius: 24px;
       overflow: hidden;
+      background: var(--white);
+      box-shadow: 0 4px 24px rgba(15,23,42,0.07);
+      border: 1.5px solid #E5E7EB;
+    }
+    /* Alternate even cards to light tint */
+    .showcase-section:nth-child(even) .showcase-card { background: #F8FAFC; }
+    .showcase-text {
+      padding: 40px 36px;
+      display: flex; flex-direction: column; justify-content: center; gap: 12px;
+    }
+    .sc-eyebrow {
+      font-size: 12px; font-weight: 700; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--blue);
+    }
+    .sc-title {
+      font-size: clamp(20px, 2vw, 26px); font-weight: 700;
+      color: var(--navy); line-height: 1.25; margin: 0;
+    }
+    .sc-desc {
+      font-size: 15px; color: #4B5563; line-height: 1.65; margin: 0;
+    }
+    .sc-list {
+      list-style: none; display: flex; flex-direction: column; gap: 6px;
+      margin: 4px 0 0;
+    }
+    .sc-list li {
+      font-size: 14px; color: #374151;
+      display: flex; align-items: flex-start; gap: 8px;
+    }
+    .sc-list li::before {
+      content: "✓"; color: var(--blue); font-weight: 700;
+      flex-shrink: 0; margin-top: 1px;
+    }
+    .showcase-visual {
+      height: 100%;
+      display: flex; align-items: center; justify-content: center;
+      padding: 24px 32px;
       background: #EEF2F7;
-      box-shadow: 0 20px 70px rgba(15,23,42,0.10);
     }
     .showcase-img {
-      width: 100%; height: 100%; display: block;
-      object-fit: cover; object-position: center;
+      max-width: 100%; max-height: 380px;
+      object-fit: contain; object-position: center center;
+      display: block;
     }
 
-    /* Tablet: same card system, wide 3:2 crop */
+    /* Tablet: stack hero, collapse showcase cards */
     @media (max-width: 960px) {
-      .hero-stacked { padding: 48px 24px; }
-      .hero-img-wrap, .showcase-frame {
-        width: 100%; height: auto;
-        aspect-ratio: 3 / 2;
-        border-radius: 20px;
-      }
-      .showcase-section { padding: 48px 24px; }
+      .hero-section { padding: 56px 32px 48px; }
+      .hero-two-col { grid-template-columns: 1fr; gap: 40px; }
+      .hero-text .hero-headline { font-size: clamp(36px, 6vw, 52px); }
+      .hero-text .hero-sub { max-width: 100%; }
+      .hero-visual img { max-height: 420px; }
+      .showcase-section { padding: 0 32px 48px; }
+      .showcase-section:first-of-type { padding-top: 56px; }
+      .showcase-card { height: auto; grid-template-columns: 1fr; }
+      .showcase-visual { height: 320px; padding: 20px; }
+      .showcase-img { max-height: 280px; }
     }
-    /* Mobile: stacked layout, shorter card, tall 4:5 crop */
+    /* Mobile */
     @media (max-width: 600px) {
-      .hero-stacked { padding: 40px 16px; }
-      .hero-img-wrap, .showcase-frame {
-        aspect-ratio: 4 / 5;
-        max-height: 480px;
-        border-radius: 16px;
-      }
-      .showcase-section { padding: 40px 16px; }
+      .hero-section { padding: 40px 20px 40px; }
+      .hero-visual img { max-height: 360px; }
+      .showcase-section { padding: 0 16px 40px; }
+      .showcase-section:first-of-type { padding-top: 48px; }
+      .showcase-text { padding: 28px 24px 20px; }
+      .showcase-visual { height: 280px; padding: 16px; }
+      .showcase-img { max-height: 240px; }
     }
 
 
@@ -502,30 +539,32 @@
 </nav>
 
 <!-- HERO -->
-<section class="hero-stacked">
-  <div class="hero-stacked-inner">
-    <div class="badge fade-up">
-      <svg width="13" height="13" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
-      Built for Enthusiasts
+<section class="hero-section">
+  <div class="hero-two-col">
+    <div class="hero-text fade-up">
+      <div class="badge">
+        <svg width="13" height="13" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+        Built for Enthusiasts
+      </div>
+      <h1 class="hero-headline">
+        Smarter fuel.<br>Better blends<span class="accent">.</span>
+      </h1>
+      <p class="hero-sub">
+        85Blends helps E85 and flex-fuel drivers calculate ethanol blends, find nearby E85 stations, manage vehicle targets, and track fuel-ups from one simple app.
+      </p>
+      <div class="hero-ctas">
+        <a href="#" class="btn-download">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+          Coming soon on iOS
+        </a>
+        <a href="#features" class="btn-link">
+          Explore features
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </a>
+      </div>
     </div>
-    <h1 class="hero-headline fade-up delay-1">
-      Smarter fuel.<br>Better blends<span class="accent">.</span>
-    </h1>
-    <p class="hero-sub fade-up delay-2">
-      85Blends helps E85 and flex-fuel drivers calculate ethanol blends, find nearby E85 stations, manage vehicle targets, and track fuel-ups from one simple app.
-    </p>
-    <div class="hero-ctas fade-up delay-3">
-      <a href="#" class="btn-download">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
-        Coming soon on iOS
-      </a>
-      <a href="#features" class="btn-link">
-        Explore features
-        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-      </a>
-    </div>
-    <div class="hero-img-wrap fade-up delay-4">
-      <img src="assets/main-hero.png" alt="85Blends app preview" class="hero-main-img" />
+    <div class="hero-visual fade-up delay-2">
+      <img src="assets/main-hero.png" alt="85Blends app preview" />
     </div>
   </div>
 </section>
@@ -533,8 +572,20 @@
 
 <!-- FEATURE SHOWCASE: CALCULATOR -->
 <section id="calculator" class="showcase-section">
-  <div class="showcase-wrap">
-    <div class="showcase-frame"><img src="assets/calculator-hero.png" alt="85Blends Calculator Feature" class="showcase-img" /></div>
+  <div class="showcase-card">
+    <div class="showcase-text">
+      <div class="sc-eyebrow">Blend Calculator</div>
+      <h2 class="sc-title">Hit your target ethanol — every fill-up.</h2>
+      <p class="sc-desc">Enter your current mix and target blend. 85Blends tells you exactly how many gallons of E85 and regular to add.</p>
+      <ul class="sc-list">
+        <li>Dial in E30, E50, E60, or full E85</li>
+        <li>Quick-fill guidance at the pump</li>
+        <li>Works with any flex-fuel tank size</li>
+      </ul>
+    </div>
+    <div class="showcase-visual">
+      <img src="assets/calculator-hero.png" alt="85Blends Calculator Feature" class="showcase-img" />
+    </div>
   </div>
 </section>
 
@@ -698,30 +749,78 @@
 
 <!-- FEATURE SHOWCASE: STATIONS -->
 <section id="stations" class="showcase-section">
-  <div class="showcase-wrap">
-    <div class="showcase-frame"><img src="assets/stations-hero.png" alt="85Blends Stations Feature" class="showcase-img" /></div>
+  <div class="showcase-card">
+    <div class="showcase-text">
+      <div class="sc-eyebrow">Station Finder</div>
+      <h2 class="sc-title">Find E85 near you, fast.</h2>
+      <p class="sc-desc">Browse nearby E85 stations on a live map, check community-updated fuel prices, and save your favorite locations.</p>
+      <ul class="sc-list">
+        <li>Live map with station locations</li>
+        <li>Community price updates</li>
+        <li>Save your favorite stations</li>
+      </ul>
+    </div>
+    <div class="showcase-visual">
+      <img src="assets/stations-hero.png" alt="85Blends Stations Feature" class="showcase-img" />
+    </div>
   </div>
 </section>
 
 
 <!-- FEATURE SHOWCASE: GARAGE -->
 <section id="garage" class="showcase-section">
-  <div class="showcase-wrap">
-    <div class="showcase-frame"><img src="assets/garage-hero.png" alt="85Blends Garage Feature" class="showcase-img" /></div>
+  <div class="showcase-card">
+    <div class="showcase-text">
+      <div class="sc-eyebrow">Vehicle Garage</div>
+      <h2 class="sc-title">All your vehicles, organized.</h2>
+      <p class="sc-desc">Store vehicle profiles with tank size, octane targets, odometer, and preferred ethanol levels — ready when you fuel up.</p>
+      <ul class="sc-list">
+        <li>Multiple vehicle profiles</li>
+        <li>Per-vehicle ethanol targets</li>
+        <li>Tank size and octane stored</li>
+      </ul>
+    </div>
+    <div class="showcase-visual">
+      <img src="assets/garage-hero.png" alt="85Blends Garage Feature" class="showcase-img" />
+    </div>
   </div>
 </section>
 
 <!-- FEATURE SHOWCASE: FUEL LOG -->
 <section id="fuel-log" class="showcase-section">
-  <div class="showcase-wrap">
-    <div class="showcase-frame"><img src="assets/fuel-log-hero.jpg" alt="85Blends Fuel Log Feature" class="showcase-img" /></div>
+  <div class="showcase-card">
+    <div class="showcase-text">
+      <div class="sc-eyebrow">Fuel Log</div>
+      <h2 class="sc-title">Track every fill-up, effortlessly.</h2>
+      <p class="sc-desc">Log fill-ups with ethanol mix, gallons, price, and mileage. Get a running view of your fuel cost and MPG over time.</p>
+      <ul class="sc-list">
+        <li>Log ethanol mix and gallons</li>
+        <li>Track MPG and fuel cost</li>
+        <li>View history across vehicles</li>
+      </ul>
+    </div>
+    <div class="showcase-visual">
+      <img src="assets/fuel-log-hero.jpg" alt="85Blends Fuel Log Feature" class="showcase-img" />
+    </div>
   </div>
 </section>
 
 <!-- FEATURE SHOWCASE: REMINDERS -->
 <section id="reminders" class="showcase-section">
-  <div class="showcase-wrap">
-    <div class="showcase-frame"><img src="assets/reminders-hero.jpg" alt="85Blends Reminders Feature" class="showcase-img" /></div>
+  <div class="showcase-card">
+    <div class="showcase-text">
+      <div class="sc-eyebrow">Reminders</div>
+      <h2 class="sc-title">Never miss a service interval.</h2>
+      <p class="sc-desc">Set mileage or date-based reminders for oil changes, spark plugs, or any recurring maintenance task.</p>
+      <ul class="sc-list">
+        <li>Mileage and date-based triggers</li>
+        <li>Custom reminder labels</li>
+        <li>Per-vehicle service tracking</li>
+      </ul>
+    </div>
+    <div class="showcase-visual">
+      <img src="assets/reminders-hero.jpg" alt="85Blends Reminders Feature" class="showcase-img" />
+    </div>
   </div>
 </section>
 
