@@ -84,7 +84,8 @@
     .hero-two-col {
       max-width: 1180px; margin: 0 auto;
       display: grid; grid-template-columns: 45fr 55fr;
-      gap: 48px; align-items: center;
+      gap: 32px; align-items: center;
+      overflow: hidden;
     }
     .hero-text { display: flex; flex-direction: column; align-items: flex-start; }
     .hero-text .badge { margin-bottom: 24px; }
@@ -93,10 +94,12 @@
     .hero-text .hero-ctas { justify-content: flex-start; margin-bottom: 0; }
     .hero-visual {
       display: flex; justify-content: center; align-items: center;
+      overflow: hidden;
     }
     .hero-visual img {
-      width: 100%; max-width: 700px; height: auto;
+      width: 100%; max-width: 860px; height: auto;
       object-fit: contain; display: block;
+      transform: scale(1.12); transform-origin: center right;
       filter: drop-shadow(0 24px 56px rgba(15,23,42,0.13));
     }
 
@@ -298,7 +301,7 @@
       .hero-two-col { grid-template-columns: 1fr; gap: 40px; }
       .hero-text .hero-headline { font-size: clamp(36px, 6vw, 52px); }
       .hero-text .hero-sub { max-width: 100%; }
-      .hero-visual img { max-height: 420px; }
+      .hero-visual img { max-height: 420px; transform: none; }
       .showcase-section { padding: 0 32px 48px; }
       .showcase-section:first-of-type { padding-top: 56px; }
       .showcase-card { height: auto; grid-template-columns: 1fr; }
@@ -373,6 +376,7 @@
       padding: 80px;
       background: #F8FAFF;
       border-top: 1.5px solid #E5E7EB;
+      scroll-margin-top: 110px;
     }
     .blend-calc-container { max-width: 1100px; margin: 0 auto; }
     .blend-calc-eyebrow {
@@ -750,7 +754,7 @@
         <p>
           Whether you're running a partial blend or full E85, 85Blends handles the math — so you know exactly what to add, what it'll cost per mile, and whether it makes sense for your next fill-up.
         </p>
-        <a href="#calculator" class="e85-cta-btn">
+        <a href="#blend-calculator" class="e85-cta-btn">
           Try the calculator
           <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
         </a>
@@ -782,7 +786,7 @@
 
 
 <!-- BLEND COST CALCULATOR -->
-<section class="blend-calc-section">
+<section id="blend-calculator" class="blend-calc-section">
   <div class="blend-calc-container">
     <div class="blend-calc-eyebrow">Blend Cost Comparison</div>
     <h2 class="blend-calc-title">Blend vs Gas</h2>
