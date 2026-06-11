@@ -84,7 +84,8 @@
     .hero-two-col {
       max-width: 1180px; margin: 0 auto;
       display: grid; grid-template-columns: 45fr 55fr;
-      gap: 48px; align-items: center;
+      gap: 36px; align-items: center;
+      overflow: hidden;
     }
     .hero-text { display: flex; flex-direction: column; align-items: flex-start; }
     .hero-text .badge { margin-bottom: 24px; }
@@ -93,10 +94,12 @@
     .hero-text .hero-ctas { justify-content: flex-start; margin-bottom: 0; }
     .hero-visual {
       display: flex; justify-content: center; align-items: center;
+      overflow: hidden;
     }
     .hero-visual img {
-      width: 100%; max-width: 700px; height: auto;
+      width: 100%; max-width: 860px; height: auto;
       object-fit: contain; display: block;
+      transform: scale(1.08); transform-origin: center right;
       filter: drop-shadow(0 24px 56px rgba(15,23,42,0.13));
     }
 
@@ -298,7 +301,7 @@
       .hero-two-col { grid-template-columns: 1fr; gap: 40px; }
       .hero-text .hero-headline { font-size: clamp(36px, 6vw, 52px); }
       .hero-text .hero-sub { max-width: 100%; }
-      .hero-visual img { max-height: 420px; }
+      .hero-visual img { max-height: 420px; transform: none; }
       .showcase-section { padding: 0 32px 48px; }
       .showcase-section:first-of-type { padding-top: 56px; }
       .showcase-card { height: auto; grid-template-columns: 1fr; }
