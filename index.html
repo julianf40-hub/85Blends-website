@@ -638,7 +638,7 @@
 <!-- NAV -->
 <nav>
   <a class="logo" href="#">
-    <img src="assets/app-icon.png" alt="85Blends" style="width:40px;height:40px;border-radius:9px;object-fit:cover;flex-shrink:0;" />
+    <img src="assets/app-icon.png" alt="85Blends" width="40" height="40" style="width:40px;height:40px;border-radius:9px;object-fit:cover;flex-shrink:0;" decoding="async">
     <span class="logo-text"><b>85</b>Blends</span>
   </a>
   <ul class="nav-links">
@@ -680,7 +680,12 @@
       </div>
     </div>
     <div class="hero-visual fade-up delay-2">
-      <img src="assets/main-hero.png" alt="85Blends app preview" />
+      <picture>
+        <source srcset="assets/main-hero.webp" type="image/webp">
+        <img src="assets/main-hero.png" alt="85Blends app preview"
+             width="1598" height="984"
+             fetchpriority="high" decoding="async">
+      </picture>
     </div>
   </div>
 </section>
@@ -779,7 +784,12 @@
       </ul>
     </div>
     <div class="showcase-visual">
-      <img src="assets/calculator-hero.png" alt="85Blends Calculator Feature" class="showcase-img" />
+      <picture>
+        <source srcset="assets/calculator-hero.webp" type="image/webp">
+        <img src="assets/calculator-hero.png" alt="85Blends Calculator Feature" class="showcase-img"
+             width="1672" height="941"
+             loading="lazy" decoding="async">
+      </picture>
     </div>
   </div>
 </section>
@@ -956,7 +966,12 @@
       </ul>
     </div>
     <div class="showcase-visual">
-      <img src="assets/stations-hero.png" alt="85Blends Stations Feature" class="showcase-img" />
+      <picture>
+        <source srcset="assets/stations-hero.webp" type="image/webp">
+        <img src="assets/stations-hero.png" alt="85Blends Stations Feature" class="showcase-img"
+             width="1672" height="941"
+             loading="lazy" decoding="async">
+      </picture>
     </div>
   </div>
 </section>
@@ -976,7 +991,12 @@
       </ul>
     </div>
     <div class="showcase-visual">
-      <img src="assets/garage-hero.png" alt="85Blends Garage Feature" class="showcase-img" />
+      <picture>
+        <source srcset="assets/garage-hero.webp" type="image/webp">
+        <img src="assets/garage-hero.png" alt="85Blends Garage Feature" class="showcase-img"
+             width="1672" height="941"
+             loading="lazy" decoding="async">
+      </picture>
     </div>
   </div>
 </section>
@@ -995,7 +1015,12 @@
       </ul>
     </div>
     <div class="showcase-visual">
-      <img src="assets/fuel-log-hero.jpg" alt="85Blends Fuel Log Feature" class="showcase-img" />
+      <picture>
+        <source srcset="assets/fuel-log-hero.webp" type="image/webp">
+        <img src="assets/fuel-log-hero.jpg" alt="85Blends Fuel Log Feature" class="showcase-img"
+             width="1672" height="941"
+             loading="lazy" decoding="async">
+      </picture>
     </div>
   </div>
 </section>
@@ -1014,7 +1039,12 @@
       </ul>
     </div>
     <div class="showcase-visual">
-      <img src="assets/reminders-hero.jpg" alt="85Blends Reminders Feature" class="showcase-img" />
+      <picture>
+        <source srcset="assets/reminders-hero.webp" type="image/webp">
+        <img src="assets/reminders-hero.jpg" alt="85Blends Reminders Feature" class="showcase-img"
+             width="1672" height="941"
+             loading="lazy" decoding="async">
+      </picture>
     </div>
   </div>
 </section>
