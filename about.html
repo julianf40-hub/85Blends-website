@@ -305,16 +305,7 @@
     }
     .photo-placeholder-caption { font-size: 13px; color: #9CA3AF; line-height: 1.6; max-width: 420px; margin: 0 auto; }
 
-    /* dark mode for new elements */
-    @media (prefers-color-scheme: dark) {
-      .sponsor-pill { background: #1F2937; border-color: #374151; color: #D1D5DB; }
-      .tl-dot { background: #111827; border-color: var(--blue); }
-      .tl-step:first-child .tl-dot { border-color: var(--gold); }
-      .tl-step:last-child  .tl-dot { background: var(--blue); }
-      .tl-step:not(:last-child)::after { background: #1F2937; }
-      .photo-placeholder { background: #0F172A; border-color: #1F2937; }
-      .photo-placeholder-label { color: #9CA3AF; }
-    }
+    /* Timeline and sponsor pills remain light in all modes */
 
     /* ── ROAD AHEAD ───────────────────────────────────── */
     .road-ahead-grid {
@@ -324,7 +315,10 @@
     .road-ahead-card {
       background: var(--white); border: 1.5px solid var(--line);
       border-radius: 18px; padding: 24px 22px;
+      box-shadow: 0 2px 12px rgba(15,23,42,0.05);
+      transition: box-shadow .2s, transform .15s, border-color .2s;
     }
+    .road-ahead-card:hover { box-shadow: 0 6px 24px rgba(15,23,42,.09); transform: translateY(-2px); border-color: #CBD5E1; }
     .road-ahead-icon { font-size: 28px; margin-bottom: 10px; }
     .road-ahead-title { font-size: 15px; font-weight: 700; color: var(--navy); margin-bottom: 6px; }
     .road-ahead-desc { font-size: 13px; color: var(--gray); line-height: 1.6; }
@@ -377,46 +371,14 @@
       .footer-bottom { flex-direction: column; align-items: flex-start; }
     }
 
-    /* ── DARK MODE ────────────────────────────────────── */
+    /* ── DARK MODE — nav and mobile menu only.
+       Content sections stay light to match homepage visual consistency. ── */
     @media (prefers-color-scheme: dark) {
-      body { background: #0B0F1A; color: #E5E7EB; }
       nav { background: rgba(11,15,26,.95); border-bottom-color: #1F2937; }
       .logo { color: #F9FAFB; }
       .nav-links a { color: #9CA3AF; }
       .nav-links a:hover { color: #F9FAFB; }
       .nav-links a[aria-current="page"] { color: var(--gold); }
-      /* hero in dark mode */
-      .about-hero { background: #0B0F1A; border-bottom-color: #1F2937; }
-      .about-hero h1 { color: #F9FAFB; }
-      .about-hero-eyebrow { color: var(--blue); }
-      .about-hero-desc { color: #9CA3AF; }
-      .hero-dl-btn { background: var(--navy2); }
-      .hero-dl-btn:hover { background: #1c2840; }
-      /* sections */
-      .about-section { border-top-color: #1F2937; }
-      .about-section.tint { background: #0F172A; }
-      .section-title { color: #F9FAFB; }
-      .section-body { color: #D1D5DB; }
-      /* story */
-      .story-card { background: #111827; border-color: #1F2937; }
-      .story-avatar-name { color: #F9FAFB; }
-      .callout-quote { background: #1a1200; color: #F9FAFB; }
-      .badge-pill { background: #1F2937; border-color: #374151; color: #D1D5DB; }
-      /* mission */
-      .mission-card { background: #111827; border-color: #1F2937; box-shadow: none; }
-      .mission-card .section-title { color: #F9FAFB; }
-      .mission-card .section-body { color: #D1D5DB; }
-      /* sponsor */
-      .sponsor-card { background: #111827; border-color: #1F2937; }
-      .sponsor-card:hover { border-color: #374151; box-shadow: 0 8px 36px rgba(0,0,0,0.35); }
-      .sponsor-caption { color: #9CA3AF; }
-      .sponsor-microcopy { color: #6B7280; }
-      .sponsor-name { color: #F9FAFB; }
-      .sponsor-desc { color: #D1D5DB; }
-      /* road ahead */
-      .road-ahead-card { background: #111827; border-color: #1F2937; }
-      .road-ahead-title { color: #F9FAFB; }
-      .road-ahead-desc { color: #9CA3AF; }
     }
   
     /* ── HAMBURGER BUTTON ──────────────────────────────── */
