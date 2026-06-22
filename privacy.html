@@ -41,107 +41,123 @@
     .nav-hamburger {
       display: none;
       background: none; border: none; cursor: pointer;
-      padding: 6px; margin-right: -6px; flex-shrink: 0;
-      color: var(--text, #0F172A);
-      min-width: 44px; min-height: 44px;
+      width: 44px; height: 44px; flex-shrink: 0;
       align-items: center; justify-content: center;
       border-radius: 8px; transition: background .15s;
+      color: var(--text, #0F172A);
     }
-    .nav-hamburger:hover  { background: rgba(107,114,128,.1); }
-    .nav-hamburger:focus-visible { outline: 2px solid var(--blue, #1F6FEB); outline-offset: 2px; }
+    .nav-hamburger:hover { background: rgba(107,114,128,.12); }
+    .nav-hamburger:focus-visible { outline: 2px solid var(--blue,#1F6FEB); outline-offset:2px; }
 
     /* ── MOBILE MENU ────────────────────────────────────── */
-    .mob-menu { display: none; position: fixed; inset: 0; z-index: 9998; }
+    .mob-menu {
+      display: none;
+      position: fixed; inset: 0; z-index: 9998;
+    }
     .mob-menu.is-open { display: block; }
+
     .mob-overlay {
-      position: absolute; inset: 0;
+      position: fixed; inset: 0;
       background: rgba(13,19,32,.55);
-      backdrop-filter: blur(3px);
+      backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
       animation: mobFadeIn .2s ease;
     }
-    @keyframes mobFadeIn { from { opacity:0; } to { opacity:1; } }
+    @keyframes mobFadeIn { from{opacity:0}to{opacity:1} }
+
     .mob-panel {
-      position: absolute; top: 0; left: 0; right: 0;
-      background: #fff;
+      position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+      background: #FFFFFF;
       border-radius: 0 0 20px 20px;
-      box-shadow: 0 12px 48px rgba(13,19,32,.18);
-      padding-top: env(safe-area-inset-top, 0px);
-      animation: mobSlideIn .25s cubic-bezier(.22,.68,0,1.1);
-      overflow: hidden;
+      box-shadow: 0 12px 48px rgba(13,19,32,.22);
+      max-height: calc(100dvh - 32px);
+      overflow-y: auto; -webkit-overflow-scrolling: touch;
+      animation: mobSlideIn .25s cubic-bezier(.22,.68,0,1.05) both;
     }
     @keyframes mobSlideIn {
-      from { transform: translateY(-100%); opacity: .5; }
-      to   { transform: translateY(0);     opacity: 1;  }
+      from { transform: translateY(-100%); }
+      to   { transform: translateY(0); }
     }
+
+    /* ── PANEL HEADER ───────────────────────────────────── */
     .mob-panel-hdr {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 0 20px; height: 68px;
+      padding: 0 16px; height: 64px;
       border-bottom: 1px solid #E5E7EB;
+      position: sticky; top: 0; background: inherit; z-index: 1;
     }
-    .mob-brand { font-size: 20px; font-weight: 800; letter-spacing: -.02em; color: #0F172A; }
-    .mob-brand b { color: var(--gold, #F5A800); }
+    .mob-brand-wrap { display: flex; align-items: center; gap: 10px; }
+    .mob-brand-icon { width: 32px; height: 32px; border-radius: 7px; object-fit: cover; flex-shrink: 0; }
+    .mob-brand-name { font-size: 18px; font-weight: 800; letter-spacing:-.02em; color: #0F172A; }
+    .mob-brand-name b { color: #F5A800; }
     .mob-close {
       background: none; border: none; cursor: pointer; padding: 0;
-      color: #6B7280; min-width: 44px; min-height: 44px;
-      display: flex; align-items: center; justify-content: center;
-      border-radius: 8px; transition: background .15s;
+      width: 44px; height: 44px; display: flex;
+      align-items: center; justify-content: center;
+      color: #6B7280; border-radius: 8px; transition: background .15s; flex-shrink: 0;
     }
     .mob-close:hover { background: #F1F5F9; }
-    .mob-close:focus-visible { outline: 2px solid var(--blue, #1F6FEB); outline-offset: 2px; }
-    .mob-nav {
-      display: flex; flex-direction: column;
-      padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-    }
+    .mob-close:focus-visible { outline: 2px solid #1F6FEB; outline-offset: 2px; }
+
+    /* ── NAV LINKS ──────────────────────────────────────── */
+    .mob-nav { display: flex; flex-direction: column; }
     .mob-nav a {
       display: flex; align-items: center;
-      min-height: 52px; padding: 0 24px;
+      min-height: 52px; padding: 0 20px;
       font-size: 16px; font-weight: 600;
-      color: #0F172A; text-decoration: none;
+      color: #0F172A !important;
+      text-decoration: none !important;
       border-bottom: 1px solid #E5E7EB;
       transition: background .1s;
     }
-    .mob-nav a:hover  { background: #F8FAFC; }
-    .mob-nav a[aria-current="page"] { color: var(--blue, #1F6FEB); }
+    .mob-nav a:last-of-type { border-bottom: none; }
+    .mob-nav a:hover { background: #F8FAFC; }
+    .mob-nav a[aria-current="page"] { color: #1F6FEB !important; }
+    .mob-nav-sep {
+      height: 6px; background: #F1F5F9;
+      border-top: 1px solid #E5E7EB; border-bottom: 1px solid #E5E7EB;
+    }
     .mob-nav-cta {
-      margin: 10px 16px 4px !important;
-      background: var(--navy, #0D1320) !important;
-      color: #fff !important;
-      border-radius: 12px !important;
-      justify-content: center !important;
-      font-weight: 700 !important;
-      border-bottom: none !important;
-      min-height: 48px !important;
-      transition: background .15s !important;
+      margin: 12px 16px !important;
+      background: #0D1320 !important; color: #fff !important;
+      border-radius: 12px !important; justify-content: center !important;
+      font-weight: 700 !important; min-height: 50px !important;
+      border-bottom: none !important; transition: background .15s !important;
     }
     .mob-nav-cta:hover { background: #1a2540 !important; }
 
-    /* ── BREAKPOINT RULES ───────────────────────────────── */
+    /* ── SHOW / HIDE ────────────────────────────────────── */
     @media (max-width: 767px)  { .nav-hamburger { display: flex; } }
-    @media (min-width: 768px)  { .mob-menu { display: none !important; } .nav-hamburger { display: none !important; } }
+    @media (min-width: 768px)  {
+      .mob-menu     { display: none !important; }
+      .nav-hamburger{ display: none !important; }
+    }
 
     /* ── DARK MODE ──────────────────────────────────────── */
     @media (prefers-color-scheme: dark) {
       .mob-panel { background: #111827; }
       .mob-panel-hdr { border-bottom-color: #1F2937; }
-      .mob-brand { color: #F9FAFB; }
+      .mob-brand-name { color: #F9FAFB; }
       .mob-close { color: #9CA3AF; }
       .mob-close:hover { background: #1F2937; }
-      .mob-nav a { color: #E5E7EB; border-bottom-color: #1F2937; }
+      .mob-nav a { color: #F1F5F9 !important; border-bottom-color: #1F2937; }
       .mob-nav a:hover { background: #1F2937; }
+      .mob-nav a[aria-current="page"] { color: #60A5FA !important; }
+      .mob-nav-sep { background: #1F2937; border-color: #374151; }
       .mob-overlay { background: rgba(0,0,0,.72); }
       .nav-hamburger { color: #E5E7EB; }
       .nav-hamburger:hover { background: rgba(255,255,255,.1); }
     }
 
-    /* legal pages: hide entire nav-links div on mobile */
-    @media (max-width: 767px) { .nav-links { display: none !important; } }
+    /* legal: hide nav-links on mobile */
+    @media(max-width:767px){.nav-links{display:none!important;}}
   </style>
 </head>
 <body>
   <nav>
     <a class="logo" href="/"><img src="assets/app-icon.png" alt="85Blends" /><span><b>85</b>Blends</span></a>
     <div class="nav-links">
-      <a href="/privacy.html">Privacy</a>
+      <a href="/">Home</a>
+      <a href="/features.html">Features</a>
       <a href="/about.html">About</a>
       <a href="/support.html">Support</a>
       <a class="btn" href="https://apps.apple.com/us/app/85blends/id6762037468" target="_blank" rel="noopener">Download on the App Store</a>
@@ -214,12 +230,18 @@
 
   <footer>© 2026 85Blends. All rights reserved.</footer>
 
+
 <!-- MOBILE NAVIGATION MENU -->
-<div id="mob-menu" class="mob-menu" aria-hidden="true" role="dialog" aria-modal="true" aria-label="Navigation">
+<div id="mob-menu" class="mob-menu" aria-hidden="true"
+     role="dialog" aria-modal="true" aria-label="Navigation">
   <div class="mob-overlay" id="mob-overlay"></div>
   <div class="mob-panel">
     <div class="mob-panel-hdr">
-      <span class="mob-brand"><b>85</b>Blends</span>
+      <div class="mob-brand-wrap">
+        <img src="assets/app-icon.png" alt="" class="mob-brand-icon" aria-hidden="true"
+             width="32" height="32" decoding="async">
+        <span class="mob-brand-name"><b>85</b>Blends</span>
+      </div>
       <button class="mob-close" id="mob-close" aria-label="Close navigation menu">
         <svg width="20" height="20" fill="none" viewBox="0 0 24 24"
              stroke="currentColor" stroke-width="2.5" aria-hidden="true">
@@ -228,57 +250,52 @@
       </button>
     </div>
     <nav class="mob-nav" aria-label="Mobile navigation">
-      <a href="/#features">Features</a>
+      <a href="/">Home</a>
+      <a href="/features.html">Features</a>
       <a href="/about.html">About</a>
       <a href="/support.html">Support</a>
+      <div class="mob-nav-sep" role="separator"></div>
       <a href="/privacy.html" aria-current="page">Privacy Policy</a>
       <a href="/terms.html">Terms of Use</a>
-      <a href="https://apps.apple.com/us/app/85blends/id6762037468" class="mob-nav-cta" target="_blank" rel="noopener">Download on the App Store</a>
+      <div class="mob-nav-sep" role="separator"></div>
+      <a href="https://apps.apple.com/us/app/85blends/id6762037468" class="mob-nav-cta">Download on the App Store</a>
     </nav>
   </div>
 </div>
 
 <script>
-/* Mobile navigation menu */
+/* Mobile navigation */
 (function () {
   var btn  = document.getElementById('nav-hamburger');
   var menu = document.getElementById('mob-menu');
   var ovl  = document.getElementById('mob-overlay');
   var cls  = document.getElementById('mob-close');
   if (!btn || !menu) return;
-
-  function openMenu() {
+  function open() {
     menu.classList.add('is-open');
-    menu.setAttribute('aria-hidden', 'false');
-    btn.setAttribute('aria-expanded', 'true');
+    menu.setAttribute('aria-hidden','false');
+    btn.setAttribute('aria-expanded','true');
     document.body.style.overflow = 'hidden';
     if (cls) cls.focus();
   }
-  function closeMenu() {
+  function close() {
     menu.classList.remove('is-open');
-    menu.setAttribute('aria-hidden', 'true');
-    btn.setAttribute('aria-expanded', 'false');
+    menu.setAttribute('aria-hidden','true');
+    btn.setAttribute('aria-expanded','false');
     document.body.style.overflow = '';
     btn.focus();
   }
-
-  btn.addEventListener('click', openMenu);
-  if (cls) cls.addEventListener('click', closeMenu);
-  if (ovl) ovl.addEventListener('click', closeMenu);
-
-  menu.querySelectorAll('.mob-nav a').forEach(function (a) {
-    a.addEventListener('click', function () {
-      /* only close immediately for same-page hash links */
-      if (a.getAttribute('href').indexOf('#') === 0) closeMenu();
-      else closeMenu();
-    });
+  btn.addEventListener('click', open);
+  if (cls) cls.addEventListener('click', close);
+  if (ovl) ovl.addEventListener('click', close);
+  menu.querySelectorAll('.mob-nav a').forEach(function(a){
+    a.addEventListener('click', close);
   });
-
-  document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape' && menu.classList.contains('is-open')) closeMenu();
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape' && menu.classList.contains('is-open')) close();
   });
 }());
 </script>
 
-</body>
+</body>>
 </html>
