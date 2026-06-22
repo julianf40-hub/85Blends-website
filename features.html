@@ -86,7 +86,7 @@
     .footer-col a:hover{color:var(--white)}
     .footer-bottom{border-top:1px solid #1F2937;padding-top:24px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;font-size:13px;color:#4B5563}
     /* WHY 85BLENDS OVERVIEW */
-    .why85-section{padding:72px 48px;border-top:1.5px solid var(--line);background:var(--white)}
+    .why85-section{padding:72px 48px;border-top:1.5px solid var(--line);background:var(--soft)}
     .why85-inner{max-width:1100px;margin:0 auto;text-align:center}
     .why85-eyebrow{font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--blue);margin-bottom:14px}
     .why85-headline{font-size:clamp(28px,3.5vw,42px);font-weight:800;color:var(--navy);line-height:1.12;margin-bottom:14px}
@@ -97,6 +97,7 @@
       border-radius:18px;padding:28px 20px 24px;
       display:flex;flex-direction:column;align-items:center;gap:10px;
       text-align:center;
+      box-shadow:0 2px 12px rgba(15,23,42,0.05);
       transition:box-shadow .2s,transform .15s,border-color .2s;
     }
     .why85-card:hover{box-shadow:0 6px 28px rgba(15,23,42,.09);transform:translateY(-2px);border-color:#CBD5E1}
@@ -110,14 +111,6 @@
     @media(max-width:600px){
       .why85-section{padding:48px 20px}
       .why85-grid{grid-template-columns:1fr}
-    }
-    @media(prefers-color-scheme:dark){
-      .why85-section{background:#0B0F1A;border-top-color:#1F2937}
-      .why85-headline{color:#F9FAFB}
-      .why85-desc,.why85-footer{color:#9CA3AF}
-      .why85-card{background:#111827;border-color:#1F2937}
-      .why85-card:hover{border-color:#374151}
-      .why85-label{color:#F9FAFB}
     }
 
     /* RESPONSIVE */
@@ -151,31 +144,14 @@
     .mob-nav-cta:hover{background:#1a2540!important}
     @media(max-width:767px){.nav-hamburger{display:flex}}
     @media(min-width:768px){.mob-menu{display:none!important}.nav-hamburger{display:none!important}}
-    /* DARK */
+    /* DARK MODE — nav, footer, and mobile menu only.
+       Content sections stay light to match homepage visual consistency. */
     @media(prefers-color-scheme:dark){
-      body{background:#0B0F1A;color:#E5E7EB}
       nav{background:rgba(11,15,26,.95);border-bottom-color:#1F2937}
       .logo{color:#F9FAFB}
       .nav-links a{color:#9CA3AF}
       .nav-links a:hover{color:#F9FAFB}
-      .feat-hero{background:#0B0F1A;border-bottom-color:#1F2937}
-      .feat-hero h1{color:#F9FAFB}
-      .feat-hero-desc{color:#9CA3AF}
-      .feat-section{border-top-color:#1F2937}
-      .feat-section.tint{background:#0F172A}
-      .feat-title{color:#F9FAFB}
-      .feat-desc{color:#D1D5DB}
-      .feat-list li{color:#D1D5DB}
-      .feat-img-tray,.feat-icon-tray{background:#1a2234}
-      .feat-tag{background:#1F2937;border-color:#374151;color:#D1D5DB}
-      .feat-tag.blue{background:#1e3a5f;color:#93C5FD;border-color:#2563EB}
-      .pro-section{background:#0F172A}
-      .pro-headline{color:#F9FAFB}
-      .pro-sub{color:#9CA3AF}
-      .pro-table{background:#111827;border-color:#1F2937}
-      .pro-table td{color:#D1D5DB;border-top-color:#1F2937}
-      .pro-table td:first-child{color:#F9FAFB}
-      .pro-table tr:hover td{background:#1F2937}
+      .nav-links a[aria-current="page"]{color:var(--gold)}
       .mob-panel{background:#111827}
       .mob-panel-hdr{border-bottom-color:#1F2937}
       .mob-brand-name{color:#F9FAFB}
