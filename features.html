@@ -85,6 +85,41 @@
     .footer-col a{color:#9CA3AF;text-decoration:none;font-size:14px}
     .footer-col a:hover{color:var(--white)}
     .footer-bottom{border-top:1px solid #1F2937;padding-top:24px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;font-size:13px;color:#4B5563}
+    /* WHY 85BLENDS OVERVIEW */
+    .why85-section{padding:72px 48px;border-top:1.5px solid var(--line);background:var(--white)}
+    .why85-inner{max-width:1100px;margin:0 auto;text-align:center}
+    .why85-eyebrow{font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--blue);margin-bottom:14px}
+    .why85-headline{font-size:clamp(28px,3.5vw,42px);font-weight:800;color:var(--navy);line-height:1.12;margin-bottom:14px}
+    .why85-desc{font-size:16px;color:#4B5563;max-width:540px;margin:0 auto 44px;line-height:1.75}
+    .why85-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:32px}
+    .why85-card{
+      background:var(--white);border:1.5px solid var(--line);
+      border-radius:18px;padding:28px 20px 24px;
+      display:flex;flex-direction:column;align-items:center;gap:10px;
+      text-align:center;
+      transition:box-shadow .2s,transform .15s,border-color .2s;
+    }
+    .why85-card:hover{box-shadow:0 6px 28px rgba(15,23,42,.09);transform:translateY(-2px);border-color:#CBD5E1}
+    .why85-icon{font-size:34px;line-height:1}
+    .why85-label{font-size:14px;font-weight:700;color:var(--navy)}
+    .why85-footer{font-size:15px;color:#6B7280;max-width:600px;margin:0 auto;line-height:1.75}
+    @media(max-width:960px){
+      .why85-section{padding:56px 32px}
+      .why85-grid{grid-template-columns:repeat(2,1fr)}
+    }
+    @media(max-width:600px){
+      .why85-section{padding:48px 20px}
+      .why85-grid{grid-template-columns:1fr}
+    }
+    @media(prefers-color-scheme:dark){
+      .why85-section{background:#0B0F1A;border-top-color:#1F2937}
+      .why85-headline{color:#F9FAFB}
+      .why85-desc,.why85-footer{color:#9CA3AF}
+      .why85-card{background:#111827;border-color:#1F2937}
+      .why85-card:hover{border-color:#374151}
+      .why85-label{color:#F9FAFB}
+    }
+
     /* RESPONSIVE */
     @media(max-width:960px){nav{padding:0 24px}.feat-hero{padding:64px 32px 56px}.feat-section{padding:56px 32px}.feat-card{grid-template-columns:1fr;gap:32px}.feat-card.rev{direction:ltr}.pro-section{padding:56px 32px}.footer-links{gap:28px}}
     @media(max-width:600px){nav{padding:0 16px}.feat-hero{padding:48px 20px 44px}.feat-section{padding:48px 20px}.feat-icon-tray{min-height:220px}.pro-section{padding:48px 20px}.pro-table td,.pro-table th{padding:11px 12px;font-size:13px}.footer-top{flex-direction:column;gap:28px}.footer-links{flex-direction:column;gap:24px}footer{padding:40px 20px 28px}.footer-bottom{flex-direction:column;align-items:flex-start}}
@@ -177,6 +212,42 @@
     <h1>Everything you need to run E85 smarter.</h1>
     <p class="feat-hero-desc">From blend calculations to station discovery, trip planning, fuel logs, and reminders — 85Blends brings the tools E85 and flex-fuel drivers need into one iPhone app.</p>
     <a href="https://apps.apple.com/us/app/85blends/id6762037468" class="feat-hero-dl" target="_blank" rel="noopener"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg> Download on the App Store</a>
+  </div>
+</section>
+
+<!-- WHY 85BLENDS -->
+<section class="why85-section">
+  <div class="why85-inner">
+    <div class="why85-eyebrow">Why 85Blends</div>
+    <h2 class="why85-headline">One app. Everything E85.</h2>
+    <p class="why85-desc">85Blends brings together the tools E85 and flex-fuel drivers need into one simple iPhone app.</p>
+    <div class="why85-grid" role="list">
+      <div class="why85-card" role="listitem">
+        <span class="why85-icon" aria-hidden="true">⛽</span>
+        <span class="why85-label">Calculate blends</span>
+      </div>
+      <div class="why85-card" role="listitem">
+        <span class="why85-icon" aria-hidden="true">📍</span>
+        <span class="why85-label">Find stations</span>
+      </div>
+      <div class="why85-card" role="listitem">
+        <span class="why85-icon" aria-hidden="true">🗺️</span>
+        <span class="why85-label">Plan trips</span>
+      </div>
+      <div class="why85-card" role="listitem">
+        <span class="why85-icon" aria-hidden="true">📊</span>
+        <span class="why85-label">Track fuel</span>
+      </div>
+      <div class="why85-card" role="listitem">
+        <span class="why85-icon" aria-hidden="true">🔧</span>
+        <span class="why85-label">Manage maintenance</span>
+      </div>
+      <div class="why85-card" role="listitem">
+        <span class="why85-icon" aria-hidden="true">☁️</span>
+        <span class="why85-label">Sync your vehicles</span>
+      </div>
+    </div>
+    <p class="why85-footer">Whether you're daily driving a flex-fuel vehicle, building a performance car, or just learning about ethanol, 85Blends helps make E85 easier to use.</p>
   </div>
 </section>
 
