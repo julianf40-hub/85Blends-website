@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>85Blends Features &#8211; E85 Calculator, Station Finder, Trip Planner &amp; Fuel Log</title>
+  <meta name="description" content="Explore 85Blends features including E85 blend calculations, At The Pump partial-fill guidance, E85 station discovery, trip planning, fuel logs, reminders, garage profiles, and Pro tools."/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet"/>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{--navy:#0D1320;--navy2:#141D30;--gold:#F5A800;--gold-lt:#FFD166;--blue:#1F6FEB;--blue-dk:#1558C8;--white:#FFFFFF;--gray:#6B7280;--text:#0F172A;--line:#E5E7EB;--soft:#F8FAFC}
+    html{scroll-behavior:smooth}
+    body{font-family:'DM Sans',sans-serif;color:var(--text);background:var(--white);line-height:1.65;overflow-x:hidden}
+    /* NAV */
+    nav{position:sticky;top:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:0 48px;height:68px;background:rgba(255,255,255,.95);backdrop-filter:blur(12px);border-bottom:1px solid rgba(0,0,0,.07)}
+    .logo{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--text);font-weight:700;font-size:20px}
+    .logo img{width:40px;height:40px;border-radius:9px;object-fit:cover}
+    .logo b{color:var(--gold)}
+    .nav-links{display:flex;gap:24px;align-items:center;list-style:none}
+    .nav-links a{color:var(--gray);text-decoration:none;font-size:15px;font-weight:600}
+    .nav-links a:hover{color:var(--text)}
+    .nav-links a[aria-current="page"]{color:var(--navy);font-weight:700}
+    .nav-dl{background:var(--blue);color:var(--white)!important;padding:10px 18px;border-radius:10px;text-decoration:none;font-size:14px;font-weight:700;transition:background .15s}
+    .nav-dl:hover{background:var(--blue-dk)}
+    /* HERO */
+    .feat-hero{background:var(--white);border-bottom:1.5px solid var(--line);padding:80px 48px 72px;text-align:center}
+    .feat-hero-inner{max-width:720px;margin:0 auto}
+    .feat-hero-eyebrow{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--blue);margin-bottom:20px}
+    .feat-hero h1{font-size:clamp(36px,5vw,60px);font-weight:800;color:var(--navy);line-height:1.1;letter-spacing:-.03em;margin-bottom:20px}
+    .feat-hero-desc{font-size:17px;color:#4B5563;max-width:560px;margin:0 auto 36px;line-height:1.75}
+    .feat-hero-dl{display:inline-flex;align-items:center;gap:10px;background:var(--navy);color:var(--white);padding:14px 28px;border-radius:12px;font-size:15px;font-weight:800;text-decoration:none;transition:background .15s,transform .15s}
+    .feat-hero-dl:hover{background:var(--navy2);transform:translateY(-2px)}
+    /* SECTIONS */
+    .feat-section{padding:72px 48px;border-top:1.5px solid var(--line)}
+    .feat-section.tint{background:var(--soft)}
+    .feat-inner{max-width:1100px;margin:0 auto}
+    .feat-card{display:grid;grid-template-columns:0.42fr 0.58fr;align-items:center;gap:56px}
+    .feat-card.rev{direction:rtl}
+    .feat-card.rev>*{direction:ltr}
+    .feat-eyebrow{font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--blue);margin-bottom:10px}
+    .feat-title{font-size:clamp(22px,2.5vw,32px);font-weight:800;color:var(--navy);margin-bottom:14px;line-height:1.2}
+    .feat-desc{font-size:15px;color:#374151;line-height:1.8;margin-bottom:18px}
+    .feat-list{list-style:none;display:flex;flex-direction:column;gap:8px;margin-bottom:24px}
+    .feat-list li{font-size:14px;color:#374151;display:flex;align-items:flex-start;gap:8px}
+    .feat-list li::before{content:"✓";color:var(--blue);font-weight:700;flex-shrink:0;margin-top:1px}
+    .feat-dl{display:inline-flex;align-items:center;gap:8px;background:var(--navy);color:var(--white);padding:11px 22px;border-radius:10px;font-size:14px;font-weight:700;text-decoration:none;transition:background .15s}
+    .feat-dl:hover{background:var(--navy2)}
+    .feat-pro-badge{font-size:10px;font-weight:700;background:var(--gold);color:var(--navy);padding:2px 8px;border-radius:6px;vertical-align:middle;margin-left:6px}
+    /* TRAYS */
+    .feat-img-tray{background:#EEF2F7;border-radius:20px;overflow:hidden;display:flex;align-items:center;justify-content:center;padding:24px;min-height:320px}
+    .feat-img-tray img{width:100%;max-height:340px;object-fit:contain;object-position:center;display:block}
+    .feat-icon-tray{background:#EEF2F7;border-radius:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 28px;gap:16px;min-height:320px}
+    .feat-icon-big{font-size:72px;line-height:1}
+    .feat-icon-tags{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+    .feat-tag{background:var(--white);border:1.5px solid var(--line);border-radius:8px;padding:5px 12px;font-size:12px;font-weight:600;color:#374151}
+    .feat-tag.blue{background:#EBF5FF;border-color:#BFDBFE;color:var(--blue)}
+    .feat-tag.gold{background:#FFFBEB;border-color:#FDE68A;color:#92600A}
+    /* PRO TABLE */
+    .pro-section{padding:72px 48px;border-top:1.5px solid var(--line);background:var(--soft)}
+    .pro-inner{max-width:760px;margin:0 auto}
+    .pro-eyebrow{font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--blue);margin-bottom:12px;text-align:center}
+    .pro-headline{font-size:clamp(24px,3vw,36px);font-weight:800;color:var(--navy);text-align:center;margin-bottom:10px}
+    .pro-sub{font-size:16px;color:#4B5563;text-align:center;margin-bottom:36px}
+    .pro-table{width:100%;border-collapse:collapse;background:var(--white);border-radius:20px;overflow:hidden;box-shadow:0 4px 24px rgba(15,23,42,.07);border:1.5px solid var(--line)}
+    .pro-table th{padding:16px 20px;text-align:center;font-size:14px;font-weight:700;background:var(--navy);color:var(--white)}
+    .pro-table th:first-child{text-align:left}
+    .pro-table th.gold{color:var(--gold)}
+    .pro-table td{padding:13px 20px;font-size:14px;color:#374151;border-top:1px solid var(--line);text-align:center}
+    .pro-table td:first-child{text-align:left;font-weight:500;color:var(--navy)}
+    .pro-table tr:hover td{background:#F8FAFC}
+    .pro-check{color:var(--blue);font-weight:700;font-size:16px}
+    .pro-gold{color:var(--gold);font-weight:700;font-size:16px}
+    .pro-dash{color:#D1D5DB;font-size:16px}
+    .pro-dl-row{text-align:center;margin-top:28px}
+    /* FOOTER */
+    footer{background:var(--navy);color:#9CA3AF;padding:48px 48px 32px}
+    .footer-top{display:flex;justify-content:space-between;align-items:flex-start;gap:40px;margin-bottom:36px}
+    .footer-brand .logo-text{font-size:20px;font-weight:800;color:var(--white)}
+    .footer-brand p{font-size:14px;color:#6B7280;margin-top:8px}
+    .footer-links{display:flex;gap:48px}
+    .footer-col h4{font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#6B7280;margin-bottom:14px}
+    .footer-col ul{list-style:none;display:flex;flex-direction:column;gap:10px}
+    .footer-col a{color:#9CA3AF;text-decoration:none;font-size:14px}
+    .footer-col a:hover{color:var(--white)}
+    .footer-bottom{border-top:1px solid #1F2937;padding-top:24px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;font-size:13px;color:#4B5563}
+    /* RESPONSIVE */
+    @media(max-width:960px){nav{padding:0 24px}.feat-hero{padding:64px 32px 56px}.feat-section{padding:56px 32px}.feat-card{grid-template-columns:1fr;gap:32px}.feat-card.rev{direction:ltr}.pro-section{padding:56px 32px}.footer-links{gap:28px}}
+    @media(max-width:600px){nav{padding:0 16px}.feat-hero{padding:48px 20px 44px}.feat-section{padding:48px 20px}.feat-icon-tray{min-height:220px}.pro-section{padding:48px 20px}.pro-table td,.pro-table th{padding:11px 12px;font-size:13px}.footer-top{flex-direction:column;gap:28px}.footer-links{flex-direction:column;gap:24px}footer{padding:40px 20px 28px}.footer-bottom{flex-direction:column;align-items:flex-start}}
+    /* HAMBURGER + MOB MENU */
+    .nav-hamburger{display:none;background:none;border:none;cursor:pointer;width:44px;height:44px;flex-shrink:0;align-items:center;justify-content:center;border-radius:8px;transition:background .15s;color:var(--text)}
+    .nav-hamburger:hover{background:rgba(107,114,128,.12)}
+    .nav-hamburger:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+    .mob-menu{display:none;position:fixed;inset:0;z-index:9998}
+    .mob-menu.is-open{display:block}
+    .mob-overlay{position:fixed;inset:0;background:rgba(13,19,32,.55);backdrop-filter:blur(3px);animation:mobFadeIn .2s ease}
+    @keyframes mobFadeIn{from{opacity:0}to{opacity:1}}
+    .mob-panel{position:fixed;top:0;left:0;right:0;z-index:9999;background:#FFFFFF;border-radius:0 0 20px 20px;box-shadow:0 12px 48px rgba(13,19,32,.22);max-height:calc(100dvh - 32px);overflow-y:auto;-webkit-overflow-scrolling:touch;animation:mobSlideIn .25s cubic-bezier(.22,.68,0,1.05) both}
+    @keyframes mobSlideIn{from{transform:translateY(-100%)}to{transform:translateY(0)}}
+    .mob-panel-hdr{display:flex;align-items:center;justify-content:space-between;padding:0 16px;height:64px;border-bottom:1px solid #E5E7EB;position:sticky;top:0;background:inherit;z-index:1}
+    .mob-brand-wrap{display:flex;align-items:center;gap:10px}
+    .mob-brand-icon{width:32px;height:32px;border-radius:7px;object-fit:cover;flex-shrink:0}
+    .mob-brand-name{font-size:18px;font-weight:800;letter-spacing:-.02em;color:#0F172A}
+    .mob-brand-name b{color:#F5A800}
+    .mob-close{background:none;border:none;cursor:pointer;padding:0;width:44px;height:44px;display:flex;align-items:center;justify-content:center;color:#6B7280;border-radius:8px;transition:background .15s;flex-shrink:0}
+    .mob-close:hover{background:#F1F5F9}
+    .mob-close:focus-visible{outline:2px solid #1F6FEB;outline-offset:2px}
+    .mob-nav{display:flex;flex-direction:column}
+    .mob-nav a{display:flex;align-items:center;min-height:52px;padding:0 20px;font-size:16px;font-weight:600;color:#0F172A!important;text-decoration:none!important;border-bottom:1px solid #E5E7EB;transition:background .1s}
+    .mob-nav a:last-of-type{border-bottom:none}
+    .mob-nav a:hover{background:#F8FAFC}
+    .mob-nav a[aria-current="page"]{color:#1F6FEB!important}
+    .mob-nav-sep{height:6px;background:#F1F5F9;border-top:1px solid #E5E7EB;border-bottom:1px solid #E5E7EB}
+    .mob-nav-cta{margin:12px 16px!important;background:#0D1320!important;color:#fff!important;border-radius:12px!important;justify-content:center!important;font-weight:700!important;min-height:50px!important;border-bottom:none!important}
+    .mob-nav-cta:hover{background:#1a2540!important}
+    @media(max-width:767px){.nav-hamburger{display:flex}}
+    @media(min-width:768px){.mob-menu{display:none!important}.nav-hamburger{display:none!important}}
+    /* DARK */
+    @media(prefers-color-scheme:dark){
+      body{background:#0B0F1A;color:#E5E7EB}
+      nav{background:rgba(11,15,26,.95);border-bottom-color:#1F2937}
+      .logo{color:#F9FAFB}
+      .nav-links a{color:#9CA3AF}
+      .nav-links a:hover{color:#F9FAFB}
+      .feat-hero{background:#0B0F1A;border-bottom-color:#1F2937}
+      .feat-hero h1{color:#F9FAFB}
+      .feat-hero-desc{color:#9CA3AF}
+      .feat-section{border-top-color:#1F2937}
+      .feat-section.tint{background:#0F172A}
+      .feat-title{color:#F9FAFB}
+      .feat-desc{color:#D1D5DB}
+      .feat-list li{color:#D1D5DB}
+      .feat-img-tray,.feat-icon-tray{background:#1a2234}
+      .feat-tag{background:#1F2937;border-color:#374151;color:#D1D5DB}
+      .feat-tag.blue{background:#1e3a5f;color:#93C5FD;border-color:#2563EB}
+      .pro-section{background:#0F172A}
+      .pro-headline{color:#F9FAFB}
+      .pro-sub{color:#9CA3AF}
+      .pro-table{background:#111827;border-color:#1F2937}
+      .pro-table td{color:#D1D5DB;border-top-color:#1F2937}
+      .pro-table td:first-child{color:#F9FAFB}
+      .pro-table tr:hover td{background:#1F2937}
+      .mob-panel{background:#111827}
+      .mob-panel-hdr{border-bottom-color:#1F2937}
+      .mob-brand-name{color:#F9FAFB}
+      .mob-close{color:#9CA3AF}
+      .mob-close:hover{background:#1F2937}
+      .mob-nav a{color:#F1F5F9!important;border-bottom-color:#1F2937}
+      .mob-nav a:hover{background:#1F2937}
+      .mob-nav-sep{background:#1F2937;border-color:#374151}
+      .mob-overlay{background:rgba(0,0,0,.72)}
+      .nav-hamburger{color:#E5E7EB}
+      .nav-hamburger:hover{background:rgba(255,255,255,.1)}
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a class="logo" href="/"><img src="assets/app-icon.png" alt="85Blends" width="40" height="40" decoding="async"/><span><b>85</b>Blends</span></a>
+  <ul class="nav-links">
+    <li><a href="/">Home</a></li>
+    <li><a href="/features.html" aria-current="page">Features</a></li>
+    <li><a href="/about.html">About</a></li>
+    <li><a href="/support.html">Support</a></li>
+    <li><a class="nav-dl" href="https://apps.apple.com/us/app/85blends/id6762037468" target="_blank" rel="noopener">Download on the App Store</a></li>
+  </ul>
+  <button class="nav-hamburger" id="nav-hamburger" aria-label="Open navigation menu" aria-expanded="false" aria-controls="mob-menu">
+    <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+  </button>
+</nav>
+
+<section class="feat-hero">
+  <div class="feat-hero-inner">
+    <div class="feat-hero-eyebrow">Features</div>
+    <h1>Everything you need to run E85 smarter.</h1>
+    <p class="feat-hero-desc">From blend calculations to station discovery, trip planning, fuel logs, and reminders — 85Blends brings the tools E85 and flex-fuel drivers need into one iPhone app.</p>
+    <a href="https://apps.apple.com/us/app/85blends/id6762037468" class="feat-hero-dl" target="_blank" rel="noopener"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg> Download on the App Store</a>
+  </div>
+</section>
+
+
+<section id="calculator" class="feat-section">
+  <div class="feat-inner"><div class="feat-card">
+    <div class="feat-text">
+      <div class="feat-eyebrow">Blend Calculator</div>
+      <h2 class="feat-title">Hit your target ethanol — every fill-up.</h2>
+      <p class="feat-desc">Enter your tank size, current ethanol level, and target blend. 85Blends instantly calculates exactly how many gallons of E85 and regular gas to add.</p>
+      <ul class="feat-list"><li>Supports E20, E30, E50, E60, E85, or any custom target</li><li>Works with any flex-fuel tank size</li><li>Accounts for what's already in your tank</li><li>Instant results — no internet required</li></ul>
+      <a href="https://apps.apple.com/us/app/85blends/id6762037468" class="feat-dl" target="_blank" rel="noopener"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg> Download on the App Store</a>
+    </div>
+    <div class="feat-img-tray"><picture><source srcset="assets/calculator-hero.webp" type="image/webp"><img src="assets/calculator-hero.png" alt="85Blends Blend Calculator" loading="lazy" decoding="async"></picture></div>
+  </div></div>
+</section>
+<section id="at-the-pump" class="feat-section tint">
+  <div class="feat-inner"><div class="feat-card rev">
+    <div class="feat-text">
+      <div class="feat-eyebrow">At The Pump</div>
+      <h2 class="feat-title">Already have fuel in the tank?</h2>
+      <p class="feat-desc">85Blends calculates exactly how much E85 and gasoline to add to reach your target blend — no guesswork, no rounding, no partial-fill confusion.</p>
+      <ul class="feat-list"><li>Exact gallons to add for any partial fill</li><li>Impossible blend detection and warnings</li><li>Works with any current ethanol level</li><li>Supports any tank size</li></ul>
+      <a href="https://apps.apple.com/us/app/85blends/id6762037468" class="feat-dl" target="_blank" rel="noopener"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg> Download on the App Store</a>
+    </div>
+    <div class="feat-icon-tray"><div class="feat-icon-big">⛽</div><div class="feat-icon-tags"><span class="feat-tag blue">Exact gallons</span><span class="feat-tag blue">Partial fills</span><span class="feat-tag gold">Blend warnings</span><span class="feat-tag ">Any tank size</span></div></div>
+  </div></div>
+</section>
+<section id="stations" class="feat-section">
+  <div class="feat-inner"><div class="feat-card">
+    <div class="feat-text">
+      <div class="feat-eyebrow">Station Finder</div>
+      <h2 class="feat-title">Find E85 near you, fast.</h2>
+      <p class="feat-desc">Browse nearby E85 stations on a live map, check community-updated prices, and save your favorite locations for quick access.</p>
+      <ul class="feat-list"><li>Live map with nearby E85 stations</li><li>Community-updated fuel prices</li><li>Save and revisit favorite stations</li><li>Station details and distance information</li></ul>
+      <a href="https://apps.apple.com/us/app/85blends/id6762037468" class="feat-dl" target="_blank" rel="noopener"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg> Download on the App Store</a>
+    </div>
+    <div class="feat-img-tray"><picture><source srcset="assets/stations-hero.webp" type="image/webp"><img src="assets/stations-hero.png" alt="85Blends Station Finder" loading="lazy" decoding="async"></picture></div>
+  </div></div>
+</section>
+<section id="trip-planner" class="feat-section tint">
+  <div class="feat-inner"><div class="feat-card rev">
+    <div class="feat-text">
+      <div class="feat-eyebrow">Trip Planner <span class="feat-pro-badge">Pro</span></div>
+      <h2 class="feat-title">Never get stranded on E85.</h2>
+      <p class="feat-desc">Plan road trips with range estimates, required fuel stops, arrival reserve targets, and E85 station recommendations along your route.</p>
+      <ul class="feat-list"><li>Estimated driving range on your current blend</li><li>Required fuel stops along the route</li><li>Arrival reserve targets</li><li>Route risk indicators</li><li>E85 station recommendations</li></ul>
+      <a href="https://apps.apple.com/us/app/85blends/id6762037468" class="feat-dl" target="_blank" rel="noopener"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg> Download on the App Store</a>
+    </div>
+    <div class="feat-icon-tray"><div class="feat-icon-big">&#128506;</div><div class="feat-icon-tags"><span class="feat-tag blue">Range estimate</span><span class="feat-tag blue">Fuel stops</span><span class="feat-tag gold">Arrival reserve</span><span class="feat-tag ">Route risk</span><span class="feat-tag ">E85 stations</span></div></div>
+  </div></div>
+</section>
+<section id="garage" class="feat-section">
+  <div class="feat-inner"><div class="feat-card">
+    <div class="feat-text">
+      <div class="feat-eyebrow">Vehicle Garage</div>
+      <h2 class="feat-title">All your vehicles, organized.</h2>
+      <p class="feat-desc">Store vehicle profiles with tank size, octane targets, odometer, and preferred ethanol levels — ready when you fuel up.</p>
+      <ul class="feat-list"><li>Multiple vehicle profiles</li><li>Per-vehicle ethanol targets</li><li>Tank size and octane stored</li><li>Odometer and service tracking</li></ul>
+      <a href="https://apps.apple.com/us/app/85blends/id6762037468" class="feat-dl" target="_blank" rel="noopener"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg> Download on the App Store</a>
+    </div>
+    <div class="feat-img-tray"><picture><source srcset="assets/garage-hero.webp" type="image/webp"><img src="assets/garage-hero.png" alt="85Blends Vehicle Garage" loading="lazy" decoding="async"></picture></div>
+  </div></div>
+</section>
+<section id="fuel-log" class="feat-section tint">
+  <div class="feat-inner"><div class="feat-card rev">
+    <div class="feat-text">
+      <div class="feat-eyebrow">Fuel Log</div>
+      <h2 class="feat-title">Track every fill-up, effortlessly.</h2>
+      <p class="feat-desc">Log fill-ups with ethanol mix, gallons, price, and mileage. Get a running view of your fuel cost and MPG over time.</p>
+      <ul class="feat-list"><li>Log ethanol blend and gallons per fill-up</li><li>Track fuel cost and price per gallon</li><li>Monitor MPG and mileage over time</li><li>View history across all vehicles</li></ul>
+      <a href="https://apps.apple.com/us/app/85blends/id6762037468" class="feat-dl" target="_blank" rel="noopener"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg> Download on the App Store</a>
+    </div>
+    <div class="feat-img-tray"><picture><source srcset="assets/fuel-log-hero.webp" type="image/webp"><img src="assets/fuel-log-hero.jpg" alt="85Blends Fuel Log" loading="lazy" decoding="async"></picture></div>
+  </div></div>
+</section>
+<section id="reminders" class="feat-section">
+  <div class="feat-inner"><div class="feat-card">
+    <div class="feat-text">
+      <div class="feat-eyebrow">Reminders</div>
+      <h2 class="feat-title">Never miss a service interval.</h2>
+      <p class="feat-desc">Set mileage or date-based reminders for oil changes, spark plugs, or any recurring vehicle maintenance task.</p>
+      <ul class="feat-list"><li>Mileage and date-based triggers</li><li>Custom reminder labels and notes</li><li>Per-vehicle service tracking</li><li>Upcoming reminder summaries</li></ul>
+      <a href="https://apps.apple.com/us/app/85blends/id6762037468" class="feat-dl" target="_blank" rel="noopener"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg> Download on the App Store</a>
+    </div>
+    <div class="feat-img-tray"><picture><source srcset="assets/reminders-hero.webp" type="image/webp"><img src="assets/reminders-hero.jpg" alt="85Blends Reminders" loading="lazy" decoding="async"></picture></div>
+  </div></div>
+</section>
+
+<section class="pro-section">
+  <div class="pro-inner">
+    <div class="pro-eyebrow">Pricing</div>
+    <h2 class="pro-headline">Free vs Pro</h2>
+    <p class="pro-sub">Start free. Upgrade for advanced tools.</p>
+    <table class="pro-table">
+      <thead><tr><th>Feature</th><th>Free</th><th class="gold">Pro</th></tr></thead>
+      <tbody>
+        <tr><td>Blend Calculator</td><td><span class="pro-check">&#10003;</span></td><td><span class="pro-gold">&#10003;</span></td></tr>
+        <tr><td>At The Pump</td><td><span class="pro-check">&#10003;</span></td><td><span class="pro-gold">&#10003;</span></td></tr>
+        <tr><td>Station Finder</td><td><span class="pro-check">&#10003;</span></td><td><span class="pro-gold">&#10003;</span></td></tr>
+        <tr><td>Fuel Log</td><td><span class="pro-check">&#10003;</span></td><td><span class="pro-gold">&#10003;</span></td></tr>
+        <tr><td>Unlimited Vehicles</td><td><span class="pro-dash">&#8212;</span></td><td><span class="pro-gold">&#10003;</span></td></tr>
+        <tr><td>Cloud Sync</td><td><span class="pro-dash">&#8212;</span></td><td><span class="pro-gold">&#10003;</span></td></tr>
+        <tr><td>Trip Planner</td><td><span class="pro-dash">&#8212;</span></td><td><span class="pro-gold">&#10003;</span></td></tr>
+        <tr><td>Price Alerts</td><td><span class="pro-dash">&#8212;</span></td><td><span class="pro-gold">&#10003;</span></td></tr>
+      </tbody>
+    </table>
+    <div class="pro-dl-row">
+      <a href="https://apps.apple.com/us/app/85blends/id6762037468" class="feat-hero-dl" target="_blank" rel="noopener" style="display:inline-flex;gap:10px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg> Download on the App Store</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="footer-top">
+    <div class="footer-brand">
+      <span class="logo-text"><b style="color:var(--gold)">85</b>Blends</span>
+      <p>Smarter fuel. Better blends.</p>
+    </div>
+    <div class="footer-links">
+      <div class="footer-col">
+        <h4>Features</h4>
+        <ul>
+          <li><a href="/features.html#calculator">Calculator</a></li>
+          <li><a href="/features.html#at-the-pump">At The Pump</a></li>
+          <li><a href="/features.html#stations">Stations</a></li>
+          <li><a href="/features.html#fuel-log">Fuel Log</a></li>
+          <li><a href="/features.html#reminders">Reminders</a></li>
+          <li><a href="/features.html#trip-planner">Trip Planner</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Company</h4>
+        <ul>
+          <li><a href="/about.html">About</a></li>
+          <li><a href="/support.html">Support</a></li>
+          <li><a href="mailto:support@85blends.app">Contact</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Legal</h4>
+        <ul>
+          <li><a href="/privacy.html">Privacy Policy</a></li>
+          <li><a href="/terms.html">Terms of Use</a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <span>&copy; 2026 JF Apps. 85Blends is a product of JF Apps. All rights reserved.</span>
+    <span>Smarter fuel. Better blends.</span>
+  </div>
+</footer>
+
+<!-- MOBILE NAVIGATION MENU -->
+<div id="mob-menu" class="mob-menu" aria-hidden="true" role="dialog" aria-modal="true" aria-label="Navigation">
+  <div class="mob-overlay" id="mob-overlay"></div>
+  <div class="mob-panel">
+    <div class="mob-panel-hdr">
+      <div class="mob-brand-wrap">
+        <img src="assets/app-icon.png" alt="" class="mob-brand-icon" aria-hidden="true" width="32" height="32" decoding="async">
+        <span class="mob-brand-name"><b>85</b>Blends</span>
+      </div>
+      <button class="mob-close" id="mob-close" aria-label="Close navigation menu">
+        <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <nav class="mob-nav" aria-label="Mobile navigation">
+      <a href="/">Home</a>
+      <a href="/features.html" aria-current="page">Features</a>
+      <a href="/about.html">About</a>
+      <a href="/support.html">Support</a>
+      <div class="mob-nav-sep" role="separator"></div>
+      <a href="/privacy.html">Privacy Policy</a>
+      <a href="/terms.html">Terms of Use</a>
+      <div class="mob-nav-sep" role="separator"></div>
+      <a href="https://apps.apple.com/us/app/85blends/id6762037468" class="mob-nav-cta" target="_blank" rel="noopener">Download on the App Store</a>
+    </nav>
+  </div>
+</div>
+<script>
+(function(){
+  var btn=document.getElementById('nav-hamburger'),menu=document.getElementById('mob-menu'),ovl=document.getElementById('mob-overlay'),cls=document.getElementById('mob-close');
+  if(!btn||!menu)return;
+  function open(){menu.classList.add('is-open');menu.setAttribute('aria-hidden','false');btn.setAttribute('aria-expanded','true');document.body.style.overflow='hidden';if(cls)cls.focus();}
+  function close(){menu.classList.remove('is-open');menu.setAttribute('aria-hidden','true');btn.setAttribute('aria-expanded','false');document.body.style.overflow='';btn.focus();}
+  btn.addEventListener('click',open);
+  if(cls)cls.addEventListener('click',close);
+  if(ovl)ovl.addEventListener('click',close);
+  menu.querySelectorAll('.mob-nav a').forEach(function(a){a.addEventListener('click',close);});
+  document.addEventListener('keydown',function(e){if(e.key==='Escape'&&menu.classList.contains('is-open'))close();});
+}());
+</script>
+</body>
+</html>
