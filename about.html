@@ -248,46 +248,65 @@
       font-size: 12px; font-weight: 600; color: #374151;
     }
 
-    /* ── JOURNEY TIMELINE ─────────────────────────────── */
+    /* ── JOURNEY TIMELINE — vertical milestones ─────── */
+    .tl-section-heading {
+      margin-bottom: 8px;
+    }
+    .tl-section-sub {
+      font-size: 15px; color: var(--gray);
+      margin-bottom: 36px; line-height: 1.6;
+    }
     .timeline {
-      display: flex; align-items: flex-start;
-      gap: 0; margin-top: 36px; overflow-x: auto;
-      padding-bottom: 4px;               /* room for scrollbar on short viewports */
+      position: relative;
+      display: flex; flex-direction: column; gap: 0;
+      margin-top: 8px;
+    }
+    /* Vertical connector line running through all milestones */
+    .timeline::before {
+      content: '';
+      position: absolute; top: 24px; bottom: 24px; left: 23px;
+      width: 2px; background: var(--line); z-index: 0;
     }
     .tl-step {
-      flex: 1; min-width: 100px;
-      display: flex; flex-direction: column; align-items: center;
+      display: grid;
+      grid-template-columns: 48px 1fr;
+      gap: 20px;
+      align-items: flex-start;
+      padding-bottom: 28px;
       position: relative;
     }
-    /* connector line */
-    .tl-step:not(:last-child)::after {
-      content: '';
-      position: absolute; top: 16px; left: 50%; right: -50%;
-      height: 2px; background: var(--line); z-index: 0;
-    }
+    .tl-step:last-child { padding-bottom: 0; }
+    /* Icon badge */
     .tl-dot {
-      width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
-      background: var(--white); border: 2.5px solid var(--blue);
+      width: 48px; height: 48px; border-radius: 50%; flex-shrink: 0;
+      background: var(--white); border: 2px solid var(--line);
       display: flex; align-items: center; justify-content: center;
-      font-size: 13px; z-index: 1; position: relative;
+      font-size: 20px; z-index: 1; position: relative;
+      box-shadow: 0 2px 8px rgba(15,23,42,0.08);
     }
-    .tl-step:first-child .tl-dot  { border-color: var(--gold); }
-    .tl-step:last-child  .tl-dot  { border-color: var(--blue); background: var(--blue); }
-    .tl-step:last-child  .tl-dot::after { content: '✓'; font-size: 12px; color: var(--white); font-weight: 700; }
-    .tl-label {
-      margin-top: 10px; font-size: 11px; font-weight: 600;
-      color: var(--gray); text-align: center; line-height: 1.4;
-      padding: 0 4px;
+    .tl-step:first-child .tl-dot {
+      background: #FFFBEB; border-color: var(--gold);
+      box-shadow: 0 2px 12px rgba(245,168,0,0.18);
     }
-    /* Mobile: vertical stack */
-    @media (max-width: 600px) {
-      .timeline { flex-direction: column; gap: 0; overflow-x: visible; padding-bottom: 0; }
-      .tl-step { flex-direction: row; align-items: center; gap: 14px; width: 100%; min-width: 0; padding: 0 0 24px; }
-      .tl-step:not(:last-child)::after {
-        top: 32px; left: 15px; right: auto;
-        width: 2px; height: 100%;
-      }
-      .tl-label { text-align: left; margin-top: 0; }
+    .tl-step:last-child .tl-dot {
+      background: #FFFBEB; border-color: var(--gold);
+      box-shadow: 0 2px 12px rgba(245,168,0,0.18);
+    }
+    /* Milestone card */
+    .tl-card {
+      background: var(--white);
+      border: 1.5px solid var(--line);
+      border-radius: 16px;
+      padding: 18px 22px;
+      box-shadow: 0 2px 10px rgba(15,23,42,0.06);
+      margin-top: 4px;
+    }
+    .tl-card-title {
+      font-size: 15px; font-weight: 700; color: var(--navy);
+      margin-bottom: 4px;
+    }
+    .tl-card-desc {
+      font-size: 14px; color: var(--gray); line-height: 1.6;
     }
 
     /* ── PHOTO PLACEHOLDER ────────────────────────────── */
@@ -634,32 +653,59 @@
     </a>
 
     <!-- JOURNEY TIMELINE -->
-    <nav class="timeline" aria-label="85Blends journey milestones">
-      <div class="tl-step">
+    <h3 class="tl-section-heading section-title" style="margin-bottom:6px;">The 85Blends Journey</h3>
+    <p class="tl-section-sub">From discovering E85 to building tools for the community.</p>
+    <ol class="timeline" aria-label="85Blends journey milestones">
+
+      <li class="tl-step">
         <div class="tl-dot" aria-hidden="true">🏎️</div>
-        <div class="tl-label">Scat Pack<br>Build</div>
-      </div>
-      <div class="tl-step">
+        <div class="tl-card">
+          <div class="tl-card-title">Scat Pack Journey</div>
+          <p class="tl-card-desc">Started modifying my 2017 Dodge Charger R/T Scat Pack.</p>
+        </div>
+      </li>
+
+      <li class="tl-step">
         <div class="tl-dot" aria-hidden="true">⛽</div>
-        <div class="tl-label">Discovering<br>E85</div>
-      </div>
-      <div class="tl-step">
+        <div class="tl-card">
+          <div class="tl-card-title">Discovering E85</div>
+          <p class="tl-card-desc">Experiencing E85 and flex-fuel tuning completely changed the car.</p>
+        </div>
+      </li>
+
+      <li class="tl-step">
         <div class="tl-dot" aria-hidden="true">💡</div>
-        <div class="tl-label">Idea for<br>85Blends</div>
-      </div>
-      <div class="tl-step">
+        <div class="tl-card">
+          <div class="tl-card-title">The Idea</div>
+          <p class="tl-card-desc">I realized there wasn't one app that offered all the tools I wanted.</p>
+        </div>
+      </li>
+
+      <li class="tl-step">
         <div class="tl-dot" aria-hidden="true">🤝</div>
-        <div class="tl-label">Encouragement<br>&amp; Support</div>
-      </div>
-      <div class="tl-step">
-        <div class="tl-dot" aria-hidden="true">🛠️</div>
-        <div class="tl-label">Building<br>the App</div>
-      </div>
-      <div class="tl-step">
-        <div class="tl-dot" aria-hidden="true"></div>
-        <div class="tl-label">Growing the<br>Community</div>
-      </div>
-    </nav>
+        <div class="tl-card">
+          <div class="tl-card-title">Encouragement</div>
+          <p class="tl-card-desc">Support and encouragement from my cousin helped turn the idea into something real.</p>
+        </div>
+      </li>
+
+      <li class="tl-step">
+        <div class="tl-dot" aria-hidden="true">🔧</div>
+        <div class="tl-card">
+          <div class="tl-card-title">Building 85Blends</div>
+          <p class="tl-card-desc">Creating the app I wished existed when I first started running E85.</p>
+        </div>
+      </li>
+
+      <li class="tl-step">
+        <div class="tl-dot" aria-hidden="true">🚀</div>
+        <div class="tl-card">
+          <div class="tl-card-title">Growing the Community</div>
+          <p class="tl-card-desc">Continuing to add features, educate drivers, and build alongside the E85 community.</p>
+        </div>
+      </li>
+
+    </ol>
 
     <!-- PHOTO PLACEHOLDER — hidden by default. Remove class="hidden-feature" to show. -->
     <div class="photo-placeholder hidden-feature" role="img" aria-label="Founder photo placeholder">
