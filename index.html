@@ -35,11 +35,12 @@
       position: sticky; top: 0; z-index: 100;
       display: flex; align-items: center; justify-content: space-between;
       padding: 0 48px; height: 68px;
-      background: rgba(255,255,255,0.95);
+      background: rgba(13,19,32,.92);
       backdrop-filter: blur(12px);
-      border-bottom: 1px solid rgba(0,0,0,0.07);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(255,255,255,.08);
     }
-    .logo { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+    .logo { display: flex; align-items: center; gap: 10px; text-decoration: none; color: #FFFFFF; }
     .logo-icon {
       width: 40px; height: 40px; border-radius: 9px;
       background: var(--navy); display: flex; align-items: center; justify-content: center;
@@ -57,12 +58,13 @@
       font-weight: 700; font-size: 11px; color: var(--gold); letter-spacing: -0.5px;
       position: relative; z-index: 1;
     }
-    .logo-text { font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: 20px; color: var(--text); }
+    .logo-text { font-family: 'DM Sans', sans-serif; font-weight: 700; font-size: 20px; color: #FFFFFF; }
     .logo-text b { color: var(--gold); }
 
     .nav-links { display: flex; gap: 32px; list-style: none; }
-    .nav-links a { text-decoration: none; color: var(--gray); font-size: 15px; font-weight: 500; transition: color .2s; }
-    .nav-links a:hover { color: var(--text); }
+    .nav-links a { text-decoration: none; color: rgba(255,255,255,.72); font-size: 15px; font-weight: 500; transition: color .2s; }
+    .nav-links a:hover { color: #FFFFFF; }
+    .nav-links a[aria-current="page"] { color: var(--gold); font-weight: 700; }
 
     .nav-actions { display: flex; align-items: center; gap: 12px; }
     .btn-ghost { background: none; border: none; cursor: pointer; font-family: inherit; font-size: 15px; font-weight: 500; color: var(--gray); padding: 8px 16px; border-radius: 8px; transition: color .2s; }
@@ -963,7 +965,7 @@
       width: 44px; height: 44px; flex-shrink: 0;
       align-items: center; justify-content: center;
       border-radius: 8px; transition: background .15s;
-      color: var(--text, #0F172A);
+      color: #FFFFFF;
     }
     .nav-hamburger:hover { background: rgba(107,114,128,.12); }
     .nav-hamburger:focus-visible { outline: 2px solid var(--blue,#1F6FEB); outline-offset:2px; }
@@ -1080,7 +1082,7 @@
     <span class="logo-text"><b>85</b>Blends</span>
   </a>
   <ul class="nav-links">
-    <li><a href="/">Home</a></li>
+    <li><a href="/" aria-current="page">Home</a></li>
     <li><a href="/features.html">Features</a></li>
     <li><a href="/about.html">About</a></li>
     <li><a href="/support.html">Support</a></li>
