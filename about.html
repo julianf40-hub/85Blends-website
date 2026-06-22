@@ -65,37 +65,38 @@
 
     /* ── HERO ─────────────────────────────────────────── */
     .about-hero {
-      background: var(--navy);
-      padding: 96px 48px 88px;
+      background: var(--white);
+      border-bottom: 1.5px solid var(--line);
+      padding: 88px 48px 80px;
       text-align: center;
+    }
+    .about-hero-inner {
+      max-width: 760px; margin: 0 auto;
     }
     .about-hero-eyebrow {
       display: inline-block;
       font-size: 12px; font-weight: 700; letter-spacing: .12em;
-      text-transform: uppercase; color: var(--gold);
+      text-transform: uppercase; color: var(--blue);
       margin-bottom: 20px;
     }
     .about-hero h1 {
-      font-size: clamp(40px, 6vw, 72px); font-weight: 800;
-      color: var(--white); line-height: 1.05;
+      font-size: clamp(36px, 5.5vw, 64px); font-weight: 800;
+      color: var(--navy); line-height: 1.08;
       letter-spacing: -.03em; margin-bottom: 20px;
     }
-    .about-hero-sub {
-      font-size: clamp(16px, 2.5vw, 22px); color: #CBD5E1;
-      max-width: 600px; margin: 0 auto 16px; line-height: 1.55;
-    }
+    .about-hero h1 .accent { color: var(--gold); }
     .about-hero-desc {
-      font-size: 16px; color: #94A3B8;
-      max-width: 520px; margin: 0 auto 40px; line-height: 1.7;
+      font-size: 17px; color: #4B5563;
+      max-width: 520px; margin: 0 auto 36px; line-height: 1.75;
     }
     .hero-dl-btn {
       display: inline-flex; align-items: center; gap: 10px;
-      background: var(--gold); color: var(--navy);
+      background: var(--navy); color: var(--white);
       padding: 14px 28px; border-radius: 12px;
       font-size: 15px; font-weight: 800; text-decoration: none;
       transition: background .15s, transform .15s;
     }
-    .hero-dl-btn:hover { background: var(--gold-lt); transform: translateY(-2px); }
+    .hero-dl-btn:hover { background: var(--navy2); transform: translateY(-2px); }
 
     /* ── SHARED SECTION LAYOUT ────────────────────────── */
     .about-section {
@@ -162,13 +163,15 @@
 
     /* ── MISSION CARD ─────────────────────────────────── */
     .mission-card {
-      background: var(--navy);
-      border-radius: 24px; padding: 44px 48px;
-      color: var(--white);
+      background: var(--white);
+      border: 1.5px solid var(--line);
+      border-radius: 24px;
+      box-shadow: 0 4px 24px rgba(15,23,42,0.07);
+      padding: 44px 48px;
     }
-    .mission-card .section-title { color: var(--white); margin-bottom: 24px; }
-    .mission-card .section-eyebrow { color: var(--gold); }
-    .mission-card .section-body { color: #CBD5E1; }
+    .mission-card .section-title { color: var(--navy); margin-bottom: 24px; }
+    .mission-card .section-eyebrow { color: var(--blue); }
+    .mission-card .section-body { color: #374151; }
 
     /* ── SPONSOR CARD ─────────────────────────────────── */
     .sponsor-card {
@@ -351,7 +354,7 @@
 
     /* ── RESPONSIVE ───────────────────────────────────── */
     @media (max-width: 960px) {
-      .about-hero { padding: 72px 32px 64px; }
+      .about-hero { padding: 64px 32px 56px; }
       .about-section { padding: 64px 32px; }
       .story-card { padding: 32px 28px; }
       .mission-card { padding: 36px 32px; }
@@ -361,7 +364,7 @@
     }
     @media (max-width: 600px) {
       nav { padding: 0 16px; }
-      .about-hero { padding: 56px 20px 48px; }
+      .about-hero { padding: 48px 20px 44px; }
       .about-section { padding: 52px 20px; }
       .story-card { padding: 24px 20px; }
       .story-header { gap: 14px; }
@@ -382,20 +385,35 @@
       .nav-links a { color: #9CA3AF; }
       .nav-links a:hover { color: #F9FAFB; }
       .nav-links a[aria-current="page"] { color: var(--gold); }
-      .story-card { background: #111827; border-color: #1F2937; }
-      .story-avatar-name { color: #F9FAFB; }
+      /* hero in dark mode */
+      .about-hero { background: #0B0F1A; border-bottom-color: #1F2937; }
+      .about-hero h1 { color: #F9FAFB; }
+      .about-hero-eyebrow { color: var(--blue); }
+      .about-hero-desc { color: #9CA3AF; }
+      .hero-dl-btn { background: var(--navy2); }
+      .hero-dl-btn:hover { background: #1c2840; }
+      /* sections */
       .about-section { border-top-color: #1F2937; }
       .about-section.tint { background: #0F172A; }
       .section-title { color: #F9FAFB; }
       .section-body { color: #D1D5DB; }
+      /* story */
+      .story-card { background: #111827; border-color: #1F2937; }
+      .story-avatar-name { color: #F9FAFB; }
       .callout-quote { background: #1a1200; color: #F9FAFB; }
       .badge-pill { background: #1F2937; border-color: #374151; color: #D1D5DB; }
+      /* mission */
+      .mission-card { background: #111827; border-color: #1F2937; box-shadow: none; }
+      .mission-card .section-title { color: #F9FAFB; }
+      .mission-card .section-body { color: #D1D5DB; }
+      /* sponsor */
       .sponsor-card { background: #111827; border-color: #1F2937; }
       .sponsor-card:hover { border-color: #374151; box-shadow: 0 8px 36px rgba(0,0,0,0.35); }
       .sponsor-caption { color: #9CA3AF; }
       .sponsor-microcopy { color: #6B7280; }
       .sponsor-name { color: #F9FAFB; }
       .sponsor-desc { color: #D1D5DB; }
+      /* road ahead */
       .road-ahead-card { background: #111827; border-color: #1F2937; }
       .road-ahead-title { color: #F9FAFB; }
       .road-ahead-desc { color: #9CA3AF; }
@@ -421,14 +439,15 @@
 
 <!-- HERO -->
 <section class="about-hero">
-  <div class="about-hero-eyebrow">About 85Blends</div>
-  <h1>Built by enthusiasts,<br>for enthusiasts.</h1>
-  <p class="about-hero-sub">About 85Blends</p>
-  <p class="about-hero-desc">85Blends was created to make E85 and flex-fuel ownership easier, more approachable, and more enjoyable for drivers everywhere.</p>
-  <a href="https://apps.apple.com/us/app/85blends/id6762037468" class="hero-dl-btn" target="_blank" rel="noopener">
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
-    Download on the App Store
-  </a>
+  <div class="about-hero-inner">
+    <div class="about-hero-eyebrow">About 85Blends</div>
+    <h1>Built by an E85 enthusiast,<br>for every E85 driver.</h1>
+    <p class="about-hero-desc">85Blends was created to make E85 and flex-fuel ownership easier, more approachable, and more enjoyable for drivers everywhere.</p>
+    <a href="https://apps.apple.com/us/app/85blends/id6762037468" class="hero-dl-btn" target="_blank" rel="noopener">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+      Download on the App Store
+    </a>
+  </div>
 </section>
 
 
