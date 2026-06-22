@@ -893,6 +893,105 @@
       .founder-header { gap: 14px; }
       .founder-avatar { width: 52px; height: 52px; font-size: 16px; }
     }
+  
+    /* ── HAMBURGER BUTTON ──────────────────────────────── */
+    .nav-hamburger {
+      display: none;
+      background: none; border: none; cursor: pointer;
+      padding: 6px; margin-right: -6px; flex-shrink: 0;
+      color: var(--text, #0F172A);
+      min-width: 44px; min-height: 44px;
+      align-items: center; justify-content: center;
+      border-radius: 8px; transition: background .15s;
+    }
+    .nav-hamburger:hover  { background: rgba(107,114,128,.1); }
+    .nav-hamburger:focus-visible { outline: 2px solid var(--blue, #1F6FEB); outline-offset: 2px; }
+
+    /* ── MOBILE MENU ────────────────────────────────────── */
+    .mob-menu { display: none; position: fixed; inset: 0; z-index: 9998; }
+    .mob-menu.is-open { display: block; }
+    .mob-overlay {
+      position: absolute; inset: 0;
+      background: rgba(13,19,32,.55);
+      backdrop-filter: blur(3px);
+      animation: mobFadeIn .2s ease;
+    }
+    @keyframes mobFadeIn { from { opacity:0; } to { opacity:1; } }
+    .mob-panel {
+      position: absolute; top: 0; left: 0; right: 0;
+      background: #fff;
+      border-radius: 0 0 20px 20px;
+      box-shadow: 0 12px 48px rgba(13,19,32,.18);
+      padding-top: env(safe-area-inset-top, 0px);
+      animation: mobSlideIn .25s cubic-bezier(.22,.68,0,1.1);
+      overflow: hidden;
+    }
+    @keyframes mobSlideIn {
+      from { transform: translateY(-100%); opacity: .5; }
+      to   { transform: translateY(0);     opacity: 1;  }
+    }
+    .mob-panel-hdr {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 20px; height: 68px;
+      border-bottom: 1px solid #E5E7EB;
+    }
+    .mob-brand { font-size: 20px; font-weight: 800; letter-spacing: -.02em; color: #0F172A; }
+    .mob-brand b { color: var(--gold, #F5A800); }
+    .mob-close {
+      background: none; border: none; cursor: pointer; padding: 0;
+      color: #6B7280; min-width: 44px; min-height: 44px;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 8px; transition: background .15s;
+    }
+    .mob-close:hover { background: #F1F5F9; }
+    .mob-close:focus-visible { outline: 2px solid var(--blue, #1F6FEB); outline-offset: 2px; }
+    .mob-nav {
+      display: flex; flex-direction: column;
+      padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    }
+    .mob-nav a {
+      display: flex; align-items: center;
+      min-height: 52px; padding: 0 24px;
+      font-size: 16px; font-weight: 600;
+      color: #0F172A; text-decoration: none;
+      border-bottom: 1px solid #E5E7EB;
+      transition: background .1s;
+    }
+    .mob-nav a:hover  { background: #F8FAFC; }
+    .mob-nav a[aria-current="page"] { color: var(--blue, #1F6FEB); }
+    .mob-nav-cta {
+      margin: 10px 16px 4px !important;
+      background: var(--navy, #0D1320) !important;
+      color: #fff !important;
+      border-radius: 12px !important;
+      justify-content: center !important;
+      font-weight: 700 !important;
+      border-bottom: none !important;
+      min-height: 48px !important;
+      transition: background .15s !important;
+    }
+    .mob-nav-cta:hover { background: #1a2540 !important; }
+
+    /* ── BREAKPOINT RULES ───────────────────────────────── */
+    @media (max-width: 767px)  { .nav-hamburger { display: flex; } }
+    @media (min-width: 768px)  { .mob-menu { display: none !important; } .nav-hamburger { display: none !important; } }
+
+    /* ── DARK MODE ──────────────────────────────────────── */
+    @media (prefers-color-scheme: dark) {
+      .mob-panel { background: #111827; }
+      .mob-panel-hdr { border-bottom-color: #1F2937; }
+      .mob-brand { color: #F9FAFB; }
+      .mob-close { color: #9CA3AF; }
+      .mob-close:hover { background: #1F2937; }
+      .mob-nav a { color: #E5E7EB; border-bottom-color: #1F2937; }
+      .mob-nav a:hover { background: #1F2937; }
+      .mob-overlay { background: rgba(0,0,0,.72); }
+      .nav-hamburger { color: #E5E7EB; }
+      .nav-hamburger:hover { background: rgba(255,255,255,.1); }
+    }
+
+    /* index.html: hide desktop download btn on mobile */
+    @media (max-width: 767px) { .nav-actions { display: none; } }
   </style>
 </head>
 <body>
@@ -914,6 +1013,15 @@
       Download on the App Store
     </a>
   </div>
+  <button class="nav-hamburger" id="nav-hamburger"
+        aria-label="Open navigation menu"
+        aria-expanded="false"
+        aria-controls="mob-menu">
+  <svg width="22" height="22" fill="none" viewBox="0 0 24 24"
+       stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+    <path d="M4 6h16M4 12h16M4 18h16"/>
+  </svg>
+</button>
 </nav>
 
 <!-- HERO -->
@@ -1815,6 +1923,73 @@
     });
   }
 })();
+</script>
+
+
+<!-- MOBILE NAVIGATION MENU -->
+<div id="mob-menu" class="mob-menu" aria-hidden="true" role="dialog" aria-modal="true" aria-label="Navigation">
+  <div class="mob-overlay" id="mob-overlay"></div>
+  <div class="mob-panel">
+    <div class="mob-panel-hdr">
+      <span class="mob-brand"><b>85</b>Blends</span>
+      <button class="mob-close" id="mob-close" aria-label="Close navigation menu">
+        <svg width="20" height="20" fill="none" viewBox="0 0 24 24"
+             stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+          <path d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+    <nav class="mob-nav" aria-label="Mobile navigation">
+      <a href="/#features">Features</a>
+      <a href="/about.html">About</a>
+      <a href="/support.html">Support</a>
+      <a href="/privacy.html">Privacy Policy</a>
+      <a href="/terms.html">Terms of Use</a>
+      <a href="https://apps.apple.com/us/app/85blends/id6762037468" class="mob-nav-cta" target="_blank" rel="noopener">Download on the App Store</a>
+    </nav>
+  </div>
+</div>
+
+<script>
+/* Mobile navigation menu */
+(function () {
+  var btn  = document.getElementById('nav-hamburger');
+  var menu = document.getElementById('mob-menu');
+  var ovl  = document.getElementById('mob-overlay');
+  var cls  = document.getElementById('mob-close');
+  if (!btn || !menu) return;
+
+  function openMenu() {
+    menu.classList.add('is-open');
+    menu.setAttribute('aria-hidden', 'false');
+    btn.setAttribute('aria-expanded', 'true');
+    document.body.style.overflow = 'hidden';
+    if (cls) cls.focus();
+  }
+  function closeMenu() {
+    menu.classList.remove('is-open');
+    menu.setAttribute('aria-hidden', 'true');
+    btn.setAttribute('aria-expanded', 'false');
+    document.body.style.overflow = '';
+    btn.focus();
+  }
+
+  btn.addEventListener('click', openMenu);
+  if (cls) cls.addEventListener('click', closeMenu);
+  if (ovl) ovl.addEventListener('click', closeMenu);
+
+  menu.querySelectorAll('.mob-nav a').forEach(function (a) {
+    a.addEventListener('click', function () {
+      /* only close immediately for same-page hash links */
+      if (a.getAttribute('href').indexOf('#') === 0) closeMenu();
+      else closeMenu();
+    });
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && menu.classList.contains('is-open')) closeMenu();
+  });
+}());
 </script>
 
 </body>
