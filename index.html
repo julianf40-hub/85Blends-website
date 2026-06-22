@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>85Blends – Smarter Fuel. Better Blends.</title>
+  <title>85Blends – E85 Calculator, Ethanol Blend Calculator &amp; Trip Planner for iPhone</title>
+  <meta name="description" content="Calculate E30, E50, E60 and E85 blends, find nearby E85 stations, plan road trips, track fuel logs, and manage flex-fuel vehicles with 85Blends for iPhone.">
+  <meta name="keywords" content="e85 calculator, ethanol calculator, e85 blend calculator, flex fuel calculator, e85 station finder, e85 app, ethanol app">
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
@@ -631,6 +633,135 @@
       .e85-proscons { grid-template-columns: 1fr; }
     }
 
+  
+    /* ─── HERO CHECKLIST ───────────────────────────────── */
+    .hero-checklist {
+      display: flex; flex-wrap: wrap; gap: 6px 20px;
+      margin-top: 18px; list-style: none; padding: 0;
+    }
+    .hero-checklist li {
+      font-size: 13px; color: #4B5563; font-weight: 600;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .hero-checklist li::before { content: "✓"; color: var(--blue); font-weight: 700; }
+
+    /* ─── BUILT FOR SECTION ─────────────────────────────── */
+    .built-for-section { padding: 72px 80px; border-top: 1.5px solid #E5E7EB; }
+    .built-for-inner { max-width: 1180px; margin: 0 auto; }
+    .built-for-eyebrow {
+      font-size: 12px; font-weight: 700; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--blue); margin-bottom: 12px;
+    }
+    .built-for-headline {
+      font-size: clamp(24px, 3vw, 36px); font-weight: 800;
+      color: var(--navy); margin-bottom: 8px;
+    }
+    .built-for-sub { font-size: 16px; color: #4B5563; margin-bottom: 36px; }
+    .built-for-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
+    }
+    .built-for-card {
+      background: var(--white); border: 1.5px solid #E5E7EB;
+      border-radius: 16px; padding: 18px 20px;
+      display: flex; align-items: center; gap: 14px;
+      transition: box-shadow .2s, transform .15s;
+    }
+    .built-for-card:hover { box-shadow: 0 4px 20px rgba(15,23,42,0.08); transform: translateY(-2px); }
+    .built-for-card-icon { font-size: 26px; flex-shrink: 0; line-height: 1; }
+    .built-for-card-label { font-size: 14px; font-weight: 600; color: var(--navy); line-height: 1.3; }
+
+    /* ─── SHOWCASE ICON VISUAL (no photo) ───────────────── */
+    .showcase-icon-visual {
+      height: 100%; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 28px 32px; background: #EEF2F7; gap: 18px;
+    }
+    .siv-icon { font-size: 64px; line-height: 1; }
+    .siv-tags { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+    .siv-tag {
+      background: var(--white); border: 1.5px solid #E5E7EB;
+      border-radius: 8px; padding: 5px 12px;
+      font-size: 12px; font-weight: 600; color: #374151;
+    }
+    .siv-tag.blue { background: #EBF5FF; border-color: #BFDBFE; color: var(--blue); }
+    .siv-tag.gold { background: #FFFBEB; border-color: #FDE68A; color: #92600A; }
+
+    /* ─── PLANS (FREE vs PRO) TABLE ─────────────────────── */
+    .plans-section { padding: 72px 80px; border-top: 1.5px solid #E5E7EB; background: #F8FAFC; }
+    .plans-inner { max-width: 820px; margin: 0 auto; }
+    .plans-eyebrow {
+      font-size: 12px; font-weight: 700; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--blue);
+      margin-bottom: 12px; text-align: center;
+    }
+    .plans-headline {
+      font-size: clamp(24px, 3vw, 36px); font-weight: 800;
+      color: var(--navy); text-align: center; margin-bottom: 36px;
+    }
+    .plans-table {
+      width: 100%; border-collapse: collapse;
+      background: var(--white); border-radius: 20px; overflow: hidden;
+      box-shadow: 0 4px 24px rgba(15,23,42,0.07); border: 1.5px solid #E5E7EB;
+    }
+    .plans-table th {
+      padding: 16px 20px; text-align: center; font-size: 14px;
+      font-weight: 700; background: var(--navy); color: var(--white);
+    }
+    .plans-table th:first-child { text-align: left; }
+    .plans-table th.col-pro { color: var(--gold); }
+    .plans-table td {
+      padding: 13px 20px; font-size: 14px; color: #374151;
+      border-top: 1px solid #E5E7EB; text-align: center;
+    }
+    .plans-table td:first-child { text-align: left; font-weight: 500; color: var(--navy); }
+    .plans-table tr:hover td { background: #F8FAFC; }
+    .plans-check { color: var(--blue); font-weight: 700; font-size: 16px; }
+    .plans-pro-check { color: var(--gold); font-weight: 700; font-size: 16px; }
+    .plans-dash { color: #D1D5DB; font-size: 16px; }
+
+    /* ─── FAQ ACCORDION ─────────────────────────────────── */
+    .faq-section { padding: 72px 80px; border-top: 1.5px solid #E5E7EB; }
+    .faq-inner { max-width: 820px; margin: 0 auto; }
+    .faq-eyebrow {
+      font-size: 12px; font-weight: 700; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--blue);
+      margin-bottom: 12px; text-align: center;
+    }
+    .faq-headline {
+      font-size: clamp(24px, 3vw, 36px); font-weight: 800;
+      color: var(--navy); text-align: center; margin-bottom: 36px;
+    }
+    .faq-item {
+      border: 1.5px solid #E5E7EB; border-radius: 14px;
+      margin-bottom: 10px; overflow: hidden; background: var(--white);
+    }
+    .faq-item summary {
+      list-style: none; padding: 18px 22px;
+      font-size: 15px; font-weight: 600; color: var(--navy);
+      cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    }
+    .faq-item summary::-webkit-details-marker { display: none; }
+    .faq-item summary::after { content: "+"; font-size: 20px; font-weight: 400; color: var(--blue); flex-shrink: 0; }
+    .faq-item[open] summary::after { content: "−"; }
+    .faq-item[open] summary { border-bottom: 1px solid #E5E7EB; }
+    .faq-answer { padding: 16px 22px; font-size: 14px; color: #4B5563; line-height: 1.75; }
+
+    /* ─── RESPONSIVE ADDITIONS ──────────────────────────── */
+    @media (max-width: 960px) {
+      .built-for-section { padding: 56px 32px; }
+      .built-for-grid { grid-template-columns: repeat(2, 1fr); }
+      .plans-section { padding: 56px 32px; }
+      .faq-section { padding: 56px 32px; }
+    }
+    @media (max-width: 600px) {
+      .built-for-section { padding: 48px 20px; }
+      .built-for-grid { grid-template-columns: 1fr; }
+      .plans-section { padding: 48px 20px; }
+      .plans-table td, .plans-table th { padding: 11px 12px; font-size: 13px; }
+      .faq-section { padding: 48px 20px; }
+      .showcase-icon-visual { padding: 20px; }
+    }
+
   </style>
 </head>
 <body>
@@ -649,7 +780,7 @@
   <div class="nav-actions">
     <a href="https://apps.apple.com/us/app/85blends/id6762037468" class="btn-primary" target="_blank" rel="noopener">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
-      Download on iOS
+      Download on the App Store
     </a>
   </div>
 </nav>
@@ -666,7 +797,7 @@
         Smarter fuel.<br>Better blends<span class="accent">.</span>
       </h1>
       <p class="hero-sub">
-        85Blends helps E85 and flex-fuel drivers calculate ethanol blends, find nearby E85 stations, manage vehicle targets, and track fuel-ups from one simple app.
+        Calculate E30–E85 blends, find nearby stations, plan trips, and manage your flex-fuel build—all from your iPhone.
       </p>
       <div class="hero-ctas">
         <a href="https://apps.apple.com/us/app/85blends/id6762037468" class="btn-download" target="_blank" rel="noopener">
@@ -678,6 +809,12 @@
           <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
         </a>
       </div>
+      <ul class="hero-checklist">
+        <li>Blend Calculator</li>
+        <li>Station Finder</li>
+        <li>Trip Planner</li>
+        <li>Fuel Logs</li>
+      </ul>
     </div>
     <div class="hero-visual fade-up delay-2">
       <picture>
@@ -690,6 +827,42 @@
   </div>
 </section>
 
+
+
+<!-- BUILT FOR SECTION -->
+<section class="built-for-section">
+  <div class="built-for-inner">
+    <div class="built-for-eyebrow">Built For</div>
+    <h2 class="built-for-headline">Built For</h2>
+    <p class="built-for-sub">Designed for real-world E85 and flex-fuel drivers.</p>
+    <div class="built-for-grid">
+      <div class="built-for-card">
+        <span class="built-for-card-icon">🏎️</span>
+        <span class="built-for-card-label">Dodge Scat Pack Owners</span>
+      </div>
+      <div class="built-for-card">
+        <span class="built-for-card-icon">🏁</span>
+        <span class="built-for-card-label">Mustang GT Drivers</span>
+      </div>
+      <div class="built-for-card">
+        <span class="built-for-card-icon">🚙</span>
+        <span class="built-for-card-label">Explorer ST Owners</span>
+      </div>
+      <div class="built-for-card">
+        <span class="built-for-card-icon">🔥</span>
+        <span class="built-for-card-label">Hellcat Enthusiasts</span>
+      </div>
+      <div class="built-for-card">
+        <span class="built-for-card-icon">⚡</span>
+        <span class="built-for-card-label">Turbo &amp; Flex-Fuel Builds</span>
+      </div>
+      <div class="built-for-card">
+        <span class="built-for-card-icon">🚗</span>
+        <span class="built-for-card-label">Daily Drivers Running E30–E85</span>
+      </div>
+    </div>
+  </div>
+</section>
 
 <!-- WHY E85 SECTION -->
 <section class="why-e85-section">
@@ -1049,6 +1222,71 @@
   </div>
 </section>
 
+
+<!-- FEATURE SHOWCASE: TRIP PLANNER -->
+<section id="trip-planner" class="showcase-section">
+  <div class="showcase-card">
+    <div class="showcase-text">
+      <div class="sc-eyebrow">Trip Planner <span style="font-size:11px;background:var(--gold);color:var(--navy);padding:2px 7px;border-radius:6px;margin-left:6px;font-weight:700;">Pro</span></div>
+      <h2 class="sc-title">Never Get Stranded on E85</h2>
+      <p class="sc-desc">Plan road trips with range estimates, fuel stops, arrival reserve targets, and route risk analysis.</p>
+      <ul class="sc-list">
+        <li>Estimated driving range</li>
+        <li>Required fuel stops</li>
+        <li>Arrival reserve targets</li>
+        <li>Route risk indicators</li>
+        <li>E85 station recommendations</li>
+      </ul>
+      <a href="https://apps.apple.com/us/app/85blends/id6762037468" class="e85-cta-btn" target="_blank" rel="noopener" style="margin-top:16px;">
+        Download on the App Store
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      </a>
+    </div>
+    <div class="showcase-icon-visual">
+      <div class="siv-icon">🗺️</div>
+      <div class="siv-tags">
+        <span class="siv-tag blue">Range estimate</span>
+        <span class="siv-tag blue">Fuel stops</span>
+        <span class="siv-tag gold">Arrival reserve</span>
+        <span class="siv-tag">Route risk</span>
+        <span class="siv-tag">E85 stations</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- FEATURE SHOWCASE: AT THE PUMP -->
+<section id="at-the-pump" class="showcase-section">
+  <div class="showcase-card">
+    <div class="showcase-text">
+      <div class="sc-eyebrow">At The Pump</div>
+      <h2 class="sc-title">Already have fuel in the tank?</h2>
+      <p class="sc-desc">85Blends calculates exactly how much E85 and gasoline to add to reach your target blend—no guessing required.</p>
+      <ul class="sc-list">
+        <li>Exact gallons to add</li>
+        <li>Partial-fill calculations</li>
+        <li>Impossible blend warnings</li>
+        <li>Supports any tank size</li>
+      </ul>
+      <a href="https://apps.apple.com/us/app/85blends/id6762037468" class="e85-cta-btn" target="_blank" rel="noopener" style="margin-top:16px;">
+        Download on the App Store
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      </a>
+    </div>
+    <div class="showcase-icon-visual">
+      <div class="siv-icon">⛽</div>
+      <div class="siv-tags">
+        <span class="siv-tag blue">Exact gallons</span>
+        <span class="siv-tag blue">Partial fills</span>
+        <span class="siv-tag gold">Blend warnings</span>
+        <span class="siv-tag">Any tank size</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+
 <!-- FEATURE CARDS -->
 <section id="features">
 <div class="features-section">
@@ -1125,6 +1363,75 @@
     </div>
   </div>
 </div>
+
+
+<!-- FAQ -->
+<section class="faq-section">
+  <div class="faq-inner">
+    <div class="faq-eyebrow">FAQ</div>
+    <h2 class="faq-headline">Common Questions</h2>
+
+    <details class="faq-item">
+      <summary>How much E85 do I need for E30?</summary>
+      <div class="faq-answer">It depends on your tank size and current ethanol level. As a rough guide, for a full tank of regular gas, you typically need to replace about 35–40% of the tank with E85 to reach E30. 85Blends calculates the exact gallons for your specific situation.</div>
+    </details>
+
+    <details class="faq-item">
+      <summary>How do I calculate an E60 blend?</summary>
+      <div class="faq-answer">Open the Blend Calculator, enter your tank size, your current ethanol percentage (usually E0 for pump gas), and set your target to E60. 85Blends instantly shows the exact gallons of E85 and regular gas to add.</div>
+    </details>
+
+    <details class="faq-item">
+      <summary>Does E85 save money?</summary>
+      <div class="faq-answer">Not always. E85 is often cheaper per gallon, but ethanol has less energy than gasoline, so fuel economy drops 15–30% on high blends. The real measure is cost per mile, not cost per gallon. Partial blends like E30 often offer a better cost-per-mile balance.</div>
+    </details>
+
+    <details class="faq-item">
+      <summary>Where can I find E85 stations?</summary>
+      <div class="faq-answer">Use the Station Finder tab in 85Blends. It shows nearby E85 stations on a live map with community-updated prices. You can also save your favorite stations for quick access.</div>
+    </details>
+
+    <details class="faq-item">
+      <summary>How much MPG do you lose on E85?</summary>
+      <div class="faq-answer">Typically 15–30% less MPG on full E85 compared to gasoline, due to ethanol's lower energy density. On partial blends like E30, the MPG penalty is smaller—often 5–10%. 85Blends Fuel Log tracks your real-world MPG over time so you can see the actual impact for your vehicle.</div>
+    </details>
+
+    <details class="faq-item">
+      <summary>Can my car run E85?</summary>
+      <div class="faq-answer">Flex-fuel vehicles (FFVs) are factory-rated for E85. Many other vehicles can run partial blends like E30 without modification, but running high ethanol in a non-flex-fuel car without proper tuning can cause issues. Check your owner's manual or consult a tuner for your specific build.</div>
+    </details>
+
+  </div>
+</section>
+
+
+<!-- FREE VS PRO -->
+<section class="plans-section">
+  <div class="plans-inner">
+    <div class="plans-eyebrow">Pricing</div>
+    <h2 class="plans-headline">Free vs Pro</h2>
+    <table class="plans-table">
+      <thead>
+        <tr>
+          <th>Feature</th>
+          <th>Free</th>
+          <th class="col-pro">Pro</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Blend Calculator</td><td><span class="plans-check">✓</span></td><td><span class="plans-pro-check">✓</span></td></tr>
+        <tr><td>At The Pump</td><td><span class="plans-check">✓</span></td><td><span class="plans-pro-check">✓</span></td></tr>
+        <tr><td>Station Finder</td><td><span class="plans-check">✓</span></td><td><span class="plans-pro-check">✓</span></td></tr>
+        <tr><td>Fuel Log</td><td><span class="plans-check">✓</span></td><td><span class="plans-pro-check">✓</span></td></tr>
+        <tr><td>Unlimited Vehicles</td><td><span class="plans-dash">—</span></td><td><span class="plans-pro-check">✓</span></td></tr>
+        <tr><td>Cloud Sync</td><td><span class="plans-dash">—</span></td><td><span class="plans-pro-check">✓</span></td></tr>
+        <tr><td>Trip Planner</td><td><span class="plans-dash">—</span></td><td><span class="plans-pro-check">✓</span></td></tr>
+        <tr><td>Price Alerts</td><td><span class="plans-dash">—</span></td><td><span class="plans-pro-check">✓</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
 
 <!-- CLOSING CTA -->
 <section class="cta-section">
