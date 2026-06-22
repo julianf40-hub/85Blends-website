@@ -208,6 +208,86 @@
     }
     .sponsor-link:hover { background: var(--navy2); }
 
+
+    /* ── SPONSOR BADGE ROW ────────────────────────────── */
+    .sponsor-badge-row {
+      display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px;
+    }
+    .sponsor-pill {
+      display: inline-flex; align-items: center; gap: 5px;
+      background: #F1F5F9; border: 1.5px solid var(--line);
+      border-radius: 99px; padding: 5px 13px;
+      font-size: 12px; font-weight: 600; color: #374151;
+    }
+
+    /* ── JOURNEY TIMELINE ─────────────────────────────── */
+    .timeline {
+      display: flex; align-items: flex-start;
+      gap: 0; margin-top: 36px; overflow-x: auto;
+      padding-bottom: 4px;               /* room for scrollbar on short viewports */
+    }
+    .tl-step {
+      flex: 1; min-width: 100px;
+      display: flex; flex-direction: column; align-items: center;
+      position: relative;
+    }
+    /* connector line */
+    .tl-step:not(:last-child)::after {
+      content: '';
+      position: absolute; top: 16px; left: 50%; right: -50%;
+      height: 2px; background: var(--line); z-index: 0;
+    }
+    .tl-dot {
+      width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+      background: var(--white); border: 2.5px solid var(--blue);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; z-index: 1; position: relative;
+    }
+    .tl-step:first-child .tl-dot  { border-color: var(--gold); }
+    .tl-step:last-child  .tl-dot  { border-color: var(--blue); background: var(--blue); }
+    .tl-step:last-child  .tl-dot::after { content: '✓'; font-size: 12px; color: var(--white); font-weight: 700; }
+    .tl-label {
+      margin-top: 10px; font-size: 11px; font-weight: 600;
+      color: var(--gray); text-align: center; line-height: 1.4;
+      padding: 0 4px;
+    }
+    /* Mobile: vertical stack */
+    @media (max-width: 600px) {
+      .timeline { flex-direction: column; gap: 0; overflow-x: visible; padding-bottom: 0; }
+      .tl-step { flex-direction: row; align-items: center; gap: 14px; width: 100%; min-width: 0; padding: 0 0 24px; }
+      .tl-step:not(:last-child)::after {
+        top: 32px; left: 15px; right: auto;
+        width: 2px; height: 100%;
+      }
+      .tl-label { text-align: left; margin-top: 0; }
+    }
+
+    /* ── PHOTO PLACEHOLDER ────────────────────────────── */
+    /* Hidden by default. To show: remove the  hidden-feature  class from the element. */
+    .hidden-feature { display: none !important; }
+    .photo-placeholder {
+      margin-top: 36px;
+      border: 2px dashed var(--line); border-radius: 20px;
+      padding: 40px 28px; text-align: center;
+      background: var(--soft);
+    }
+    .photo-placeholder-icon { font-size: 40px; margin-bottom: 12px; }
+    .photo-placeholder-label {
+      font-size: 14px; font-weight: 600; color: var(--gray); margin-bottom: 6px;
+    }
+    .photo-placeholder-caption { font-size: 13px; color: #9CA3AF; line-height: 1.6; max-width: 420px; margin: 0 auto; }
+
+    /* dark mode for new elements */
+    @media (prefers-color-scheme: dark) {
+      .sponsor-pill { background: #1F2937; border-color: #374151; color: #D1D5DB; }
+      .tl-dot { background: #111827; border-color: var(--blue); }
+      .tl-step:first-child .tl-dot { border-color: var(--gold); }
+      .tl-step:last-child  .tl-dot { background: var(--blue); }
+      .tl-step:not(:last-child)::after { background: #1F2937; }
+      .photo-placeholder { background: #0F172A; border-color: #1F2937; }
+      .photo-placeholder-label { color: #9CA3AF; }
+    }
+
     /* ── ROAD AHEAD ───────────────────────────────────── */
     .road-ahead-grid {
       display: grid; grid-template-columns: repeat(3,1fr); gap: 16px;
@@ -381,23 +461,67 @@
     <h2 class="section-title">Founding Supporter &amp; Sponsor</h2>
     <div class="section-body">
       <p>85Blends would not exist without the support and encouragement of my cousin, whose own automotive journey helped inspire mine.</p>
-      <p>Through RVPSupply, he has built a business centered around serving automotive enthusiasts and helping people pursue their own projects and passions. He was one of the people who encouraged me to take the idea for 85Blends and turn it into a real app.</p>
-      <p>Today, RVPSupply proudly serves as a founding supporter and sponsor of 85Blends, and we are grateful for that support as we continue building tools and resources for the E85 community.</p>
+      <p>As I began learning more about E85 and the world of performance modifications, he was one of the people who encouraged me to keep exploring, keep learning, and eventually turn the idea for 85Blends into a real app.</p>
+      <p>Through RVPSupply, he has built a business centered around supporting automotive enthusiasts and helping people pursue their own projects and passions.</p>
+      <p>RVPSupply's early encouragement and support helped transform 85Blends from an idea into a real product serving the E85 community.</p>
+      <p>Today, RVPSupply proudly serves as a founding supporter and sponsor of 85Blends, and we're grateful for that support as we continue building tools and resources for enthusiasts everywhere.</p>
     </div>
 
-    <div class="sponsor-card" aria-label="RVPSupply — Founding Supporter">
+    <!-- SPONSOR CARD -->
+    <div class="sponsor-card" aria-label="RVPSupply — Founding Supporter &amp; Sponsor">
       <div class="sponsor-logo" aria-hidden="true">RVP<br>Supply</div>
       <div class="sponsor-meta">
         <span class="sponsor-badge">Founding Supporter &amp; Sponsor</span>
         <div class="sponsor-name">RVPSupply</div>
-        <p class="sponsor-desc">An automotive enthusiast business built around helping people pursue their projects and passions. Proud founding sponsor of 85Blends.</p>
-        <!-- To enable: set the correct href below and remove style="display:none" -->
-        <a href="#" class="sponsor-link" style="display:none" target="_blank" rel="noopener">
+        <p class="sponsor-desc">Supporting automotive enthusiasts and helping ideas become reality.</p>
+        <div class="sponsor-badge-row" aria-label="Sponsor highlights">
+          <span class="sponsor-pill">🤝 Founding Supporter</span>
+          <span class="sponsor-pill">🏎️ Automotive Enthusiast</span>
+          <span class="sponsor-pill">🚀 Early Sponsor of 85Blends</span>
+        </div>
+        <!-- To enable Visit button: set the correct href and remove style="display:none" -->
+        <a href="#" class="sponsor-link" style="display:none" target="_blank" rel="noopener noreferrer">
           Visit RVPSupply
           <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
         </a>
       </div>
     </div>
+
+    <!-- JOURNEY TIMELINE -->
+    <nav class="timeline" aria-label="85Blends journey milestones">
+      <div class="tl-step">
+        <div class="tl-dot" aria-hidden="true">🏎️</div>
+        <div class="tl-label">Scat Pack<br>Build</div>
+      </div>
+      <div class="tl-step">
+        <div class="tl-dot" aria-hidden="true">⛽</div>
+        <div class="tl-label">Discovering<br>E85</div>
+      </div>
+      <div class="tl-step">
+        <div class="tl-dot" aria-hidden="true">💡</div>
+        <div class="tl-label">Idea for<br>85Blends</div>
+      </div>
+      <div class="tl-step">
+        <div class="tl-dot" aria-hidden="true">🤝</div>
+        <div class="tl-label">Encouragement<br>&amp; Support</div>
+      </div>
+      <div class="tl-step">
+        <div class="tl-dot" aria-hidden="true">🛠️</div>
+        <div class="tl-label">Building<br>the App</div>
+      </div>
+      <div class="tl-step">
+        <div class="tl-dot" aria-hidden="true"></div>
+        <div class="tl-label">Growing the<br>Community</div>
+      </div>
+    </nav>
+
+    <!-- PHOTO PLACEHOLDER — hidden by default. Remove class="hidden-feature" to show. -->
+    <div class="photo-placeholder hidden-feature" role="img" aria-label="Founder photo placeholder">
+      <div class="photo-placeholder-icon">📸</div>
+      <div class="photo-placeholder-label">Founder Photo Coming Soon</div>
+      <p class="photo-placeholder-caption">Photo of Julian Figueroa with the 2017 Dodge Charger R/T Scat Pack that inspired the creation of 85Blends.</p>
+    </div>
+
   </div>
 </section>
 
