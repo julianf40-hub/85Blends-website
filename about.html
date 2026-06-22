@@ -309,6 +309,15 @@
       font-size: 14px; color: var(--gray); line-height: 1.6;
     }
 
+    /* ── JOURNEY SECTION SEPARATOR ──────────────────── */
+    .journey-section {
+      margin-top: 96px;
+      padding-top: 32px;
+      border-top: 1px solid var(--line);
+    }
+    @media (max-width: 960px) { .journey-section { margin-top: 80px; } }
+    @media (max-width: 600px) { .journey-section { margin-top: 64px; } }
+
     /* ── PHOTO PLACEHOLDER ────────────────────────────── */
     /* Hidden by default. To show: remove the  hidden-feature  class from the element. */
     .hidden-feature { display: none !important; }
@@ -653,6 +662,7 @@
     </a>
 
     <!-- JOURNEY TIMELINE -->
+    <div class="journey-section">
     <h3 class="tl-section-heading section-title" style="margin-bottom:6px;">The 85Blends Journey</h3>
     <p class="tl-section-sub">From discovering E85 to building tools for the community.</p>
     <ol class="timeline" aria-label="85Blends journey milestones">
@@ -706,6 +716,7 @@
       </li>
 
     </ol>
+    </div><!-- /journey-section -->
 
     <!-- PHOTO PLACEHOLDER — hidden by default. Remove class="hidden-feature" to show. -->
     <div class="photo-placeholder hidden-feature" role="img" aria-label="Founder photo placeholder">
