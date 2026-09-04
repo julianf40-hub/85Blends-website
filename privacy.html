@@ -140,23 +140,28 @@
     <div class="eyebrow">85Blends legal</div>
     <h1>Privacy Policy</h1>
     <p class="intro">This Privacy Policy explains how 85Blends handles information when you use the 85Blends app and website.</p>
-    <p class="updated">Last updated: June 8, 2026</p>
+    <p class="updated">Last updated: September 4, 2026</p>
 
     <section class="card">
       <h2>Overview</h2>
-      <p>85Blends is designed to help E85 and flex-fuel drivers calculate ethanol blends, find nearby E85 stations, manage vehicle profiles, track fill-ups, and set reminders. We aim to collect only what is needed to operate and improve the app.</p>
+      <p>85Blends is designed to help E85 and flex-fuel drivers calculate ethanol blends, find nearby E85 stations, manage vehicle profiles, track fill-ups, plan trips, and set reminders. 85Blends also offers an optional Pro subscription, community-submitted station and price information, and iCloud sync. We aim to collect only what is needed to operate the app, keep community data useful, and support your subscription.</p>
 
       <h2>Information you enter in the app</h2>
       <p>The app may allow you to enter information such as vehicle nicknames, vehicle details, tank size, target ethanol blend, odometer readings, fuel logs, fuel prices, station names, notes, and reminder details. This information is used to provide app features such as blend calculations, garage defaults, fill-up history, and service reminders.</p>
 
-      <h2>Local storage and iCloud</h2>
-      <p>85Blends is intended to keep your garage, fuel log, reminder, and calculator data under your control. App data may be stored locally on your device. If iCloud sync or backup is enabled, your data may also be stored through Apple iCloud according to your Apple account and iCloud settings.</p>
+      <h2>Local storage and iCloud sync</h2>
+      <p>85Blends is intended to keep your garage, fuel log, reminder, and calculator data under your control. App data may be stored locally on your device. If you enable iCloud sync, this data may also be stored and synced across your devices using Apple's CloudKit service, tied to your Apple ID and governed by your Apple account and iCloud settings. Cloud sync is available on both the Free and Pro versions of 85Blends — it is not a Pro-only feature. Apple's handling of iCloud data is governed by Apple's own privacy policy.</p>
 
       <h2>Location information</h2>
-      <p>If you choose to use nearby station features, the app may request access to your location to search for E85 stations near you, show distance, or support trip and station-related features. You can disable location access at any time in your device settings. If location permission is disabled, nearby station features may be limited or unavailable.</p>
+      <p>85Blends uses location for two separate purposes:</p>
+      <ul>
+        <li><strong>Nearby station search.</strong> When you use the Stations tab or search for nearby E85 stations, the app requests access to your location while you're using the app to find and sort stations near you and to support trip-planning features. You can disable this at any time in iOS Settings; nearby-station and distance features may then be limited or unavailable.</li>
+        <li><strong>Automatic Pump Detection (optional).</strong> If you turn on Automatic Pump Detection, 85Blends can use background or "Always" location access to help recognize when you've arrived at a fuel station so it can prompt you to log a fill-up. This feature is off by default and entirely optional, and it requires you to separately grant background/"Always" location permission. You can turn Automatic Pump Detection off, or change location access back to "While Using the App" or "Never," at any time in iOS Settings.</li>
+      </ul>
+      <p>Location data used for these features is processed to provide the feature you've requested and is not sold. Station coordinates shown on the map (for example, the address of a nearby E85 station) describe the station's location, not your personal location.</p>
 
-      <h2>Community station and price information</h2>
-      <p>If the app allows you to submit or update community station details or fuel price reports, the information you submit may include station details, price, fuel type, timestamp, and related report information. Community-submitted information may be displayed to other users to help keep station and price information useful.</p>
+      <h2>Community Pricing and station information</h2>
+      <p>85Blends lets users submit or update community station details and fuel price reports ("Community Pricing"). When you submit a report, we store the station details, price, fuel type, timestamp, and a persisted anonymous reporter/device identifier used to help prevent abuse and maintain the accuracy of community data. This identifier is generated on your device, is not your name, email address, or Apple ID, and is not used to advertise to you or to track you across other companies' apps or websites. Community-submitted information may be displayed to other users to help keep station and price information useful. Community submissions and related station data are stored using Supabase, our backend database provider, which processes this information on our behalf.</p>
 
       <h2>Diagnostics and technical information</h2>
       <p>The app or website may receive limited technical information needed to operate, troubleshoot, protect, or improve the service. This may include device or browser type, app version, crash or error information, and general usage events. We do not use this information to sell your personal data.</p>
@@ -165,10 +170,14 @@
       <p>When you visit 85Blends.app, standard web hosting systems may process basic technical information such as IP address, browser type, pages requested, and timestamps. This information is used for security, reliability, and site operation.</p>
 
       <h2>Third-party services</h2>
-      <p>85Blends may rely on third-party services to provide certain features, such as Apple services, map services, cloud hosting, station data, email support, or website hosting. These providers may process information as needed to provide their services. Your use of those features may also be subject to their own privacy policies.</p>
+      <p>85Blends relies on third-party services to provide certain features, including Apple services (such as iCloud/CloudKit and the App Store), Supabase (community data backend), Google Mobile Ads and Google's User Messaging Platform (advertising and consent), RevenueCat (subscription management), map and station data providers, email support tools, and website hosting. These providers may process information as needed to provide their services, and your use of those features may also be subject to their own privacy policies.</p>
 
-      <h2>Advertising and selling data</h2>
-      <p>85Blends does not sell your personal information. The current product direction is to avoid third-party banner advertising inside the app.</p>
+      <h2>Advertising and Google Mobile Ads</h2>
+      <p>85Blends uses Google Mobile Ads (AdMob) to show ads in the app. Google and its advertising partners may collect and use information such as device and app identifiers, general technical information, and ad interaction data to serve and measure ads, as described in Google's own privacy policy. Where required — for example, for users in the EEA, UK, and similar regions — 85Blends uses Google's User Messaging Platform (UMP) to obtain and manage your consent choices for personalized advertising, and you can update those choices at any time from within the app's privacy settings.</p>
+      <p>85Blends does not sell your personal information. 85Blends itself does not use an advertising identifier (IDFA) to track you across other companies' apps or websites, so the app does not show Apple's App Tracking Transparency prompt. Advertising partners' own data practices are described in their respective privacy policies and, where applicable, in the App Store's "App Privacy" details for 85Blends.</p>
+
+      <h2>Subscriptions and RevenueCat</h2>
+      <p>85Blends Pro is an auto-renewable subscription billed through your Apple ID / App Store account under Apple's own terms. 85Blends uses RevenueCat to help manage and validate subscription status across your devices. RevenueCat may process identifiers related to your purchase (such as an app-specific user ID and purchase/transaction information) to confirm your subscription and keep your Pro status in sync; it does not receive your name, email address, or payment details from Apple as part of this process. You can view, manage, cancel, or restore your subscription at any time from Settings on your iPhone.</p>
 
       <h2>Children's privacy</h2>
       <p>85Blends is not directed to children under 13. We do not knowingly collect personal information from children under 13. If you believe a child has provided personal information, contact us and we will take appropriate steps.</p>
@@ -176,8 +185,10 @@
       <h2>Your choices</h2>
       <ul>
         <li>You can edit or delete information you enter in the app where the app provides those controls.</li>
-        <li>You can disable location permission in iOS Settings.</li>
-        <li>You can manage iCloud behavior through your Apple account and device settings.</li>
+        <li>You can disable location permission, or turn off Automatic Pump Detection and background/"Always" location, in iOS Settings.</li>
+        <li>You can manage iCloud sync behavior through your Apple account and device settings.</li>
+        <li>You can manage ad personalization and privacy choices through Google's consent (UMP) prompt or your device's advertising settings.</li>
+        <li>You can manage, cancel, or restore your 85Blends Pro subscription from Settings on your iPhone.</li>
         <li>You can contact us for privacy questions at <a href="mailto:support@85blends.app">support@85blends.app</a>.</li>
       </ul>
 
