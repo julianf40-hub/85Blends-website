@@ -1,0 +1,51 @@
+name: Finalize website refresh once
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/run-post-refresh-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  finalize-refresh:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out refresh branch
+        uses: actions/checkout@v4
+        with:
+          ref: website/refresh-2.4
+          fetch-depth: 0
+
+      - name: Sync current main and apply final SEO polish
+        run: |
+          git fetch origin main
+          git merge --no-edit origin/main
+          python3 tools/post_refresh.py
+          rm -rf tools
+          rm -f .github/workflows/run-post-refresh-once.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Finalize website refresh SEO and release copy"
+          git push origin website/refresh-2.4
+
+      - name: Remove this one-shot workflow from main
+        run: |
+          git fetch origin main
+          git switch -C main origin/main
+          rm .github/workflows/run-post-refresh-once.yml
+          git add .github/workflows/run-post-refresh-once.yml
+          git commit -m "Remove website refresh finalizer"
+          git push origin main
+
+      - name: Bring refresh branch fully up to date with cleaned main
+        run: |
+          git fetch origin main website/refresh-2.4
+          git switch -C website/refresh-2.4 origin/website/refresh-2.4
+          git merge --no-edit origin/main
+          git push origin website/refresh-2.4
