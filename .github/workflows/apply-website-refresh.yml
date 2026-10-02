@@ -1,0 +1,52 @@
+name: Apply 85Blends website refresh
+
+on:
+  push:
+    branches:
+      - website/refresh-2.4
+    paths:
+      - .github/workflows/apply-website-refresh.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out refresh branch
+        uses: actions/checkout@v4
+        with:
+          ref: website/refresh-2.4
+          fetch-depth: 0
+
+      - name: Generate website refresh
+        run: python3 tools/refresh_2_4_site.py
+
+      - name: Validate generated HTML basics
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          required = [
+              'index.html','features.html','about.html','support.html','privacy.html','terms.html',
+              'e85-calculator.html','whats-new.html','robots.txt','sitemap.xml','site.webmanifest'
+          ]
+          for path in required:
+              p = Path(path)
+              assert p.exists() and p.stat().st_size > 0, f'missing/empty: {path}'
+          for path in [p for p in required if p.endswith('.html')]:
+              text = Path(path).read_text(encoding='utf-8')
+              assert '<html' in text.lower() and '</html>' in text.lower(), f'html shell invalid: {path}'
+              assert '85blends.app' in text.lower() or path in ('support.html',), f'expected site metadata missing: {path}'
+          print('Basic generated-site validation passed')
+          PY
+
+      - name: Commit generated refresh and remove one-shot workflow
+        run: |
+          rm .github/workflows/apply-website-refresh.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Refresh 85Blends website for 2.4.0 and 2.4.1 roadmap"
+          git push origin website/refresh-2.4
