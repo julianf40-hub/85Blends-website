@@ -1,0 +1,16 @@
+{
+  "name": "85Blends",
+  "short_name": "85Blends",
+  "description": "E85 blend calculator, station finder, trip planner, and flex-fuel utility.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0D1320",
+  "theme_color": "#0D1320",
+  "icons": [
+    {
+      "src": "/assets/app-icon.png",
+      "sizes": "1024x1024",
+      "type": "image/png"
+    }
+  ]
+}

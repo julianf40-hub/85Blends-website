@@ -240,7 +240,7 @@ def add_index_refresh(text):
     <div class="release-actions"><a class="primary" href="/whats-new.html">See everything in 2.4.0</a><a class="secondary" href="/features.html">Explore all features</a></div>
   </div>
 </section>'''
-    text = insert_before_once(text, '<section class="blend-calc-section">', release, "WEBSITE REFRESH 2.4 RELEASE")
+    text = insert_before_once(text, '<section id="blend-calculator" class="blend-calc-section">', release, "WEBSITE REFRESH 2.4 RELEASE")
 
     # Add explicit billing options beneath the Free vs Pro table.
     if "85BLENDS PRO BILLING OPTIONS" not in text:
