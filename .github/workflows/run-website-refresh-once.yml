@@ -23,6 +23,7 @@ jobs:
 
       - name: Generate and validate refresh
         run: |
+          python3 tools/fix_refresh_anchor.py
           python3 tools/refresh_2_4_site.py
           python3 - <<'PY'
           from pathlib import Path
