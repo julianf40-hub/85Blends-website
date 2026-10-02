@@ -1,0 +1,57 @@
+name: Run final website polish once
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/run-final-polish-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  polish-refresh-branch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out refresh branch
+        uses: actions/checkout@v4
+        with:
+          ref: website/refresh-2.4
+          fetch-depth: 0
+
+      - name: Apply final polish and validate
+        run: |
+          python3 tools/final_polish.py
+          python3 - <<'PY'
+          from pathlib import Path
+          html = list(Path('.').glob('*.html'))
+          assert html
+          for path in html:
+              text = path.read_text(encoding='utf-8')
+              assert '</body>>' not in text, f'malformed closing body: {path}'
+              assert 'rel="canonical"' in text, f'canonical missing: {path}'
+          assert '35–40%' not in Path('index.html').read_text(encoding='utf-8')
+          assert 'value="2"' in Path('e85-calculator.html').read_text(encoding='utf-8')
+          assert 'October 2, 2026' in Path('privacy.html').read_text(encoding='utf-8')
+          print('Final website validation passed')
+          PY
+
+      - name: Commit polished website and remove build-only tooling
+        run: |
+          rm -rf tools
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Polish 2.4 website refresh and fix legacy HTML"
+          git push origin website/refresh-2.4
+
+      - name: Remove this one-shot workflow from main
+        run: |
+          git fetch origin main
+          git switch -C main origin/main
+          rm .github/workflows/run-final-polish-once.yml
+          git add .github/workflows/run-final-polish-once.yml
+          git commit -m "Remove final website polish runner"
+          git push origin main
