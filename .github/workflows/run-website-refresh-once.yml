@@ -1,0 +1,61 @@
+name: Run website refresh once
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/run-website-refresh-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  generate-refresh-branch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out refresh branch
+        uses: actions/checkout@v4
+        with:
+          ref: website/refresh-2.4
+          fetch-depth: 0
+
+      - name: Generate and validate refresh
+        run: |
+          python3 tools/refresh_2_4_site.py
+          python3 - <<'PY'
+          from pathlib import Path
+          required = [
+              'index.html','features.html','about.html','support.html','privacy.html','terms.html',
+              'e85-calculator.html','whats-new.html','robots.txt','sitemap.xml','site.webmanifest'
+          ]
+          for path in required:
+              p = Path(path)
+              assert p.exists() and p.stat().st_size > 0, f'missing/empty: {path}'
+          for path in [p for p in required if p.endswith('.html')]:
+              text = Path(path).read_text(encoding='utf-8')
+              assert '<html' in text.lower() and '</html>' in text.lower(), f'html shell invalid: {path}'
+              assert 'rel="canonical"' in text, f'canonical metadata missing: {path}'
+          assert 'Coming in 2.4.1' in Path('index.html').read_text(encoding='utf-8')
+          assert 'Community Ethanol Reports' in Path('features.html').read_text(encoding='utf-8')
+          print('Website refresh validation passed')
+          PY
+
+      - name: Commit generated website to refresh branch
+        run: |
+          rm -f .github/workflows/apply-website-refresh.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Refresh 85Blends website for 2.4.0 and 2.4.1 roadmap"
+          git push origin website/refresh-2.4
+
+      - name: Remove this one-shot workflow from main
+        run: |
+          git fetch origin main
+          git switch -C main origin/main
+          rm .github/workflows/run-website-refresh-once.yml
+          git add .github/workflows/run-website-refresh-once.yml
+          git commit -m "Remove one-shot website refresh runner"
+          git push origin main
