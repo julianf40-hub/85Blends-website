@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>85Blends – E85 Calculator, Ethanol Blend Calculator &amp; Trip Planner for iPhone</title>
-  <meta name="description" content="Calculate E30, E50, E60 and E85 blends, find nearby E85 stations, plan road trips, track fuel logs, and manage flex-fuel vehicles with 85Blends for iPhone.">
+  <meta name="description" content="Calculate E30, E50, E60 and E85 blends, find nearby E85 stations, plan road trips, compare fuel costs, and manage your flex-fuel setup with 85Blends for iPhone.">
   <meta name="keywords" content="e85 calculator, ethanol calculator, e85 blend calculator, flex fuel calculator, e85 station finder, e85 app, ethanol app">
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -1059,7 +1059,61 @@
 
     /* index: hide download btn on mobile */
     @media (max-width:767px){.nav-actions{display:none;}}
+  
+    /* ─── WEBSITE REFRESH 2.4 ─────────────────────────── */
+    .trust-strip { border-bottom:1px solid #E5E7EB; background:#F8FAFC; padding:14px 24px; }
+    .trust-strip-inner { max-width:1180px; margin:0 auto; display:flex; flex-wrap:wrap; justify-content:center; gap:10px 24px; color:#475569; font-size:13px; font-weight:700; }
+    .trust-dot { color:var(--gold); }
+    .release-section { padding:80px; background:linear-gradient(180deg,#0D1320 0%,#121B2D 100%); color:white; }
+    .release-inner { max-width:1180px; margin:0 auto; }
+    .release-kicker { color:var(--gold); font-size:12px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; margin-bottom:10px; }
+    .release-title { font-family:'Bebas Neue',sans-serif; font-size:clamp(38px,5vw,58px); line-height:1; margin-bottom:12px; }
+    .release-sub { color:#AAB4C5; max-width:720px; line-height:1.7; margin-bottom:30px; }
+    .release-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
+    .release-card { border:1px solid rgba(255,255,255,.11); background:rgba(255,255,255,.055); border-radius:18px; padding:24px; }
+    .release-card .tag { display:inline-flex; padding:5px 9px; border-radius:999px; background:rgba(245,168,0,.13); color:#FFD166; font-size:11px; font-weight:800; margin-bottom:12px; }
+    .release-card h3 { font-size:18px; margin-bottom:8px; }
+    .release-card p { color:#AAB4C5; font-size:14px; line-height:1.65; }
+    .release-actions { margin-top:26px; display:flex; flex-wrap:wrap; gap:12px; }
+    .release-actions a { text-decoration:none; font-weight:800; border-radius:10px; padding:12px 16px; }
+    .release-actions .primary { background:var(--gold); color:var(--navy); }
+    .release-actions .secondary { border:1px solid rgba(255,255,255,.18); color:white; }
+    .plan-options { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; max-width:900px; margin:26px auto 0; }
+    .plan-option { background:white; border:1.5px solid #E5E7EB; border-radius:14px; padding:18px; text-align:center; }
+    .plan-option.best { border-color:var(--gold); box-shadow:0 8px 26px rgba(245,168,0,.12); }
+    .plan-option .plan-name { font-weight:800; color:#334155; font-size:14px; }
+    .plan-option .plan-price { font-family:'Bebas Neue',sans-serif; font-size:32px; color:var(--navy); margin:5px 0 0; }
+    .plan-option .plan-note { color:#64748B; font-size:12px; }
+    .partner-section { padding:72px 80px; background:#F8FAFC; border-top:1px solid #E5E7EB; }
+    .partner-inner { max-width:1040px; margin:0 auto; }
+    .partner-card { display:grid; grid-template-columns:140px 1fr auto; gap:28px; align-items:center; background:white; border:1.5px solid #E5E7EB; border-radius:18px; padding:26px; text-decoration:none; color:inherit; }
+    .partner-card img { width:130px; max-height:70px; object-fit:contain; }
+    .partner-card h3 { margin:0 0 6px; font-size:19px; }
+    .partner-card p { color:#64748B; line-height:1.6; font-size:14px; }
+    .partner-card .partner-cta { color:var(--blue); font-weight:800; white-space:nowrap; }
+    .partner-note { margin-top:12px; color:#64748B; text-align:center; font-size:12px; }
+    @media(max-width:800px){ .release-section,.partner-section{padding:56px 24px}.release-grid{grid-template-columns:1fr}.plan-options{grid-template-columns:1fr}.partner-card{grid-template-columns:1fr;text-align:center}.partner-card img{margin:auto}.partner-card .partner-cta{white-space:normal} }
+
   </style>
+
+  <link rel="canonical" href="https://85blends.app/" />
+  <link rel="icon" href="/assets/app-icon.png" />
+  <link rel="apple-touch-icon" href="/assets/app-icon.png" />
+  <link rel="manifest" href="/site.webmanifest" />
+  <meta name="apple-itunes-app" content="app-id=6762037468" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="85Blends" />
+  <meta property="og:title" content="85Blends – E85 Calculator, Ethanol Blend Calculator &amp; Trip Planner for iPhone" />
+  <meta property="og:description" content="Calculate E30, E50, E60 and E85 blends, find nearby E85 stations, plan road trips, compare fuel costs, and manage your flex-fuel setup with 85Blends for iPhone." />
+  <meta property="og:url" content="https://85blends.app/" />
+  <meta property="og:image" content="https://85blends.app/assets/main-hero.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="85Blends – E85 Calculator, Ethanol Blend Calculator &amp; Trip Planner for iPhone" />
+  <meta name="twitter:description" content="Calculate E30, E50, E60 and E85 blends, find nearby E85 stations, plan road trips, compare fuel costs, and manage your flex-fuel setup with 85Blends for iPhone." />
+  <meta name="twitter:image" content="https://85blends.app/assets/main-hero.png" />
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Organization","name":"JF Apps","url":"https://85blends.app","brand":{"@type":"Brand","name":"85Blends"},"logo":"https://85blends.app/assets/app-icon.png","sameAs":["https://www.instagram.com/85blendsapp/"]}</script>
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"MobileApplication","name":"85Blends","operatingSystem":"iOS","applicationCategory":"UtilitiesApplication","url":"https://apps.apple.com/us/app/85blends/id6762037468","downloadUrl":"https://apps.apple.com/us/app/85blends/id6762037468","description":"E85 and ethanol blend calculator, station finder, trip planner, fuel log, community fuel data, and flex-fuel utility for iPhone.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}</script>
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"How much E85 do I need for E30?","acceptedAnswer":{"@type":"Answer","text":"The amount depends on tank size, fuel already in the tank, the current ethanol percentage, and the actual ethanol content of the fuel at the pump. 85Blends calculates the gallons needed for your specific inputs."}},{"@type":"Question","name":"How do I calculate an E60 blend?","acceptedAnswer":{"@type":"Answer","text":"Enter tank size, the amount and ethanol percentage already in the tank, the target blend, and the pump-fuel ethanol percentages. In the United States, regular pump gasoline is commonly E10 rather than E0, so use the pump label or a measured value when available."}},{"@type":"Question","name":"Can my car run E85?","acceptedAnswer":{"@type":"Answer","text":"Flexible-fuel vehicles are designed for high-ethanol fuels. Modified performance vehicles may also support higher ethanol blends when equipped and tuned appropriately. Follow your vehicle manufacturer's fuel requirements or your tuner's recommendations before using ethanol concentrations beyond those approved for your vehicle."}}]}</script>
 </head>
 <body>
 
@@ -1136,6 +1190,17 @@
 
 
 
+<!-- WEBSITE REFRESH TRUST STRIP -->
+<div class="trust-strip" aria-label="85Blends product highlights">
+  <div class="trust-strip-inner">
+    <span>Blend Calculator</span><span class="trust-dot">•</span>
+    <span>Live E85 Stations</span><span class="trust-dot">•</span>
+    <span>Community Fuel Data</span><span class="trust-dot">•</span>
+    <span>Trip Planning</span><span class="trust-dot">•</span>
+    <span>iCloud Sync</span><span class="trust-dot">•</span>
+    <span>Free to download · No account required</span>
+  </div>
+</div>
 <!-- BUILT FOR SECTION -->
 <section class="built-for-section">
   <div class="built-for-inner">
@@ -1300,6 +1365,21 @@
 
 
 <!-- BLEND COST CALCULATOR -->
+<!-- WEBSITE REFRESH 2.4 RELEASE -->
+<section class="release-section" aria-labelledby="release-24-heading">
+  <div class="release-inner">
+    <div class="release-kicker">Version 2.4.0</div>
+    <h2 class="release-title" id="release-24-heading">A bigger E85 experience.</h2>
+    <p class="release-sub">85Blends 2.4.0 expands beyond blend math with glanceable station tools, community ethanol readings, referral rewards, and more ways to use Pro.</p>
+    <div class="release-grid">
+      <article class="release-card"><div class="tag">PRO</div><h3>Nearby E85 Widgets</h3><p>See nearby E85 stations from your Home Screen with Small, Medium, and Large widget layouts. Supported community ethanol readings can appear right in the widget.</p></article>
+      <article class="release-card"><div class="tag">COMMUNITY</div><h3>Community Ethanol Reports</h3><p>Share the ethanol percentage you find at the pump and see recent community readings at supported stations—useful when seasonal E85 content changes.</p></article>
+      <article class="release-card"><div class="tag">REWARDS</div><h3>Refer &amp; Earn</h3><p>Invite other drivers to 85Blends Pro. Every 5 successful paid referrals works toward a free month of Pro.</p></article>
+      <article class="release-card"><div class="tag">PRO</div><h3>More Pro Plan Options</h3><p>Choose Monthly, 3 Months, or Annual billing, alongside a refreshed purchase, restore, and subscription experience.</p></article>
+    </div>
+    <div class="release-actions"><a class="primary" href="/whats-new.html">See everything in 2.4.0</a><a class="secondary" href="/features.html">Explore all features</a></div>
+  </div>
+</section>
 <section id="blend-calculator" class="blend-calc-section">
   <div class="blend-calc-container">
     <div class="blend-calc-eyebrow">Blend Cost Comparison</div>
@@ -1464,12 +1544,12 @@
 
     <details class="faq-item">
       <summary>How much E85 do I need for E30?</summary>
-      <div class="faq-answer">It depends on your tank size and current ethanol level. As a rough guide, for a full tank of regular gas, you typically need to replace about 35–40% of the tank with E85 to reach E30. 85Blends calculates the exact gallons for your specific situation.</div>
+      <div class="faq-answer">There is no single percentage that works for every fill-up because the answer depends on tank size, how much fuel is already in the tank, the ethanol percentage already in that fuel, and the actual ethanol content of both pump fuels. Use the 85Blends calculator for the gallons required by your specific inputs.</div>
     </details>
 
     <details class="faq-item">
       <summary>How do I calculate an E60 blend?</summary>
-      <div class="faq-answer">Open the Blend Calculator, enter your tank size, your current ethanol percentage (usually E0 for pump gas), and set your target to E60. 85Blends instantly shows the exact gallons of E85 and regular gas to add.</div>
+      <div class="faq-answer">Open the Blend Calculator, enter your tank size, the amount and ethanol percentage already in the tank, and set your target to E60. In the U.S., regular pump gasoline is commonly E10 rather than E0, so check the pump label or use a measured value when available. 85Blends then shows the gallons needed for your inputs.</div>
     </details>
 
     <details class="faq-item">
@@ -1489,7 +1569,7 @@
 
     <details class="faq-item">
       <summary>Can my car run E85?</summary>
-      <div class="faq-answer">Flex-fuel vehicles (FFVs) are factory-rated for E85. Many other vehicles can run partial blends like E30 without modification, but running high ethanol in a non-flex-fuel car without proper tuning can cause issues. Check your owner's manual or consult a tuner for your specific build.</div>
+      <div class="faq-answer">Flex-fuel vehicles (FFVs) are designed for high-ethanol fuels. Modified performance vehicles may also support higher ethanol blends when equipped and tuned appropriately. Always follow your vehicle manufacturer's fuel requirements or your tuner's recommendations before using ethanol concentrations beyond those approved for your vehicle.</div>
     </details>
 
   </div>
@@ -1513,19 +1593,43 @@
         <tr><td>Blend Calculator</td><td><span class="plans-check">✓</span></td><td><span class="plans-pro-check">✓</span></td></tr>
         <tr><td>At The Pump</td><td><span class="plans-check">✓</span></td><td><span class="plans-pro-check">✓</span></td></tr>
         <tr><td>Station Finder</td><td><span class="plans-check">✓</span></td><td><span class="plans-pro-check">✓</span></td></tr>
+        <tr><td>Community Prices</td><td><span class="plans-check">✓</span></td><td><span class="plans-pro-check">✓</span></td></tr>
+        <tr><td>Community Ethanol Reports</td><td><span class="plans-check">✓</span></td><td><span class="plans-pro-check">✓</span></td></tr>
         <tr><td>Fuel Log</td><td><span class="plans-check">✓</span></td><td><span class="plans-pro-check">✓</span></td></tr>
-        <tr><td>Unlimited Vehicles</td><td><span class="plans-dash">—</span></td><td><span class="plans-pro-check">✓</span></td></tr>
+        <tr><td>Vehicle Garage</td><td>1 vehicle</td><td><strong>Unlimited</strong></td></tr>
         <tr><td>Cloud Sync</td><td><span class="plans-check">✓</span></td><td><span class="plans-pro-check">✓</span></td></tr>
         <tr><td>Trip Planner</td><td><span class="plans-dash">—</span></td><td><span class="plans-pro-check">✓</span></td></tr>
         <tr><td>Pro Stations Map</td><td><span class="plans-dash">—</span></td><td><span class="plans-pro-check">✓</span></td></tr>
-        <tr><td>Price Alerts</td><td><span class="plans-dash">—</span></td><td><span class="plans-pro-check">✓</span></td></tr>
+        <tr><td>Nearby E85 Home Screen Widgets</td><td><span class="plans-dash">—</span></td><td><span class="plans-pro-check">✓</span></td></tr>
+        <tr><td>Ad-Free Experience</td><td><span class="plans-dash">—</span></td><td><span class="plans-pro-check">✓</span></td></tr>
+        <tr><td>Price Alerts</td><td><span class="plans-dash">—</span></td><td><strong style="color:#92600A;">Coming in 2.4.1</strong></td></tr>
       </tbody>
     </table>
   </div>
+
+  <!-- 85BLENDS PRO BILLING OPTIONS -->
+  <div class="plan-options" aria-label="85Blends Pro billing options">
+    <div class="plan-option"><div class="plan-name">Monthly</div><div class="plan-price">$3.99</div><div class="plan-note">per month</div></div>
+    <div class="plan-option"><div class="plan-name">3 Months</div><div class="plan-price">$9.99</div><div class="plan-note">billed every 3 months</div></div>
+    <div class="plan-option best"><div class="plan-name">Annual · Best Value</div><div class="plan-price">$24.99</div><div class="plan-note">per year</div></div>
+  </div>
+  <p style="text-align:center;color:#64748B;font-size:12px;margin-top:12px;">Subscriptions are purchased and managed through the App Store.</p>
 </section>
 
 
 
+<!-- WEBSITE REFRESH PARTNERS -->
+<section class="partner-section" aria-labelledby="partners-heading">
+  <div class="partner-inner">
+    <div style="text-align:center;margin-bottom:26px;"><div class="features-section-eyebrow">Partners &amp; Recommended Gear</div><h2 class="features-section-title" id="partners-heading">Built with the community.</h2></div>
+    <a class="partner-card" href="https://rvpsupply.com" target="_blank" rel="noopener noreferrer">
+      <picture><source srcset="assets/rvpsupply-logo.webp" type="image/webp"><img src="assets/rvpsupply-logo.png" alt="RVPSupply" loading="lazy" decoding="async"></picture>
+      <div><h3>RVPSupply · Founding Supporter</h3><p>Automotive parts and enthusiast-focused gear from a supporter that helped 85Blends grow from an idea into a real app.</p></div>
+      <div class="partner-cta">Visit RVPSupply →</div>
+    </a>
+    <p class="partner-note">Additional featured brands will be added only after partnerships are officially announced.</p>
+  </div>
+</section>
 <!-- FOUNDER STORY -->
 <section class="founder-section" aria-labelledby="founder-heading">
   <div class="founder-inner">
@@ -1610,6 +1714,9 @@
           <li><a href="/about.html">About</a></li>
           <li><a href="/support.html">Support</a></li>
           <li><a href="mailto:support@85blends.app">Contact</a></li>
+          <li><a href="/whats-new.html">What's New</a></li>
+          <li><a href="/e85-calculator.html">Free E85 Calculator</a></li>
+          <li><a href="https://www.instagram.com/85blendsapp/" target="_blank" rel="noopener">Instagram @85blendsapp</a></li>
         </ul>
       </div>
       <div class="footer-col">
@@ -1862,5 +1969,5 @@
 
 
 
-</body>>
+</body>
 </html>
