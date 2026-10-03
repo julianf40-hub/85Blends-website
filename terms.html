@@ -7,115 +7,12 @@
   <meta name="description" content="Read the terms of use for the 85Blends iPhone app and website.">
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    :root { --navy:#0D1320; --blue:#1F6FEB; --gold:#F5A800; --gray:#6B7280; --text:#0F172A; --line:#E5E7EB; }
-    body { font-family:'DM Sans', sans-serif; color:var(--text); background:linear-gradient(180deg,#FFFFFF 0%,#F4F7FF 100%); line-height:1.65; }
-    nav { position:sticky; top:0; z-index:100; display:flex; align-items:center; justify-content:space-between; padding:0 48px; height:68px; background:rgba(13,19,32,.92); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); border-bottom:1px solid rgba(255,255,255,.08); }
-    .logo { display:flex; align-items:center; gap:10px; text-decoration:none; color:#FFFFFF; font-weight:700; font-size:20px; }
-    .logo img { width:40px; height:40px; border-radius:9px; object-fit:cover; }
-    .logo b { color:var(--gold); }
-    .nav-links { display:flex; gap:24px; align-items:center; }
-    .nav-links a { color:rgba(255,255,255,.72); text-decoration:none; font-size:15px; font-weight:600; }
-    .nav-links a:hover { color:#FFFFFF; }
-    .nav-links a[aria-current="page"] { color:var(--gold); font-weight:700; }
-    .btn { background:var(--blue); color:white !important; padding:10px 18px; border-radius:10px; text-decoration:none; }
-    main { max-width:920px; margin:0 auto; padding:72px 24px 96px; }
-    .eyebrow { color:var(--blue); text-transform:uppercase; letter-spacing:.14em; font-size:13px; font-weight:800; margin-bottom:12px; }
-    h1 { font-size:clamp(40px,6vw,68px); line-height:1; letter-spacing:-.05em; margin-bottom:18px; }
-    .intro { color:#475569; font-size:19px; max-width:760px; margin-bottom:36px; }
-    .updated { color:var(--gray); font-size:14px; margin-bottom:22px; }
-    .card { background:rgba(255,255,255,.92); border:1px solid var(--line); border-radius:24px; padding:34px; box-shadow:0 18px 60px rgba(15,23,42,.08); }
-    h2 { font-size:24px; line-height:1.2; margin:34px 0 10px; }
-    h2:first-child { margin-top:0; }
-    p, li { color:#475569; font-size:16px; }
-    ul { padding-left:22px; margin:8px 0 0; }
-    a { color:var(--blue); font-weight:700; }
-    .notice { background:#FFFBEB; border:1px solid #FDE68A; border-radius:18px; padding:18px; margin:24px 0; color:#713F12; }
-    footer { border-top:1px solid var(--line); text-align:center; color:var(--gray); padding:28px 20px; background:white; }
-    @media (max-width:700px) { nav{padding:0 18px}.nav-links a:not(.btn){display:none}.card{padding:24px} }
-  
-    /* ── HAMBURGER ────────────────────────────────────── */
-    .nav-hamburger {
-      display: none;
-      background: none; border: none; cursor: pointer;
-      width: 44px; height: 44px; flex-shrink: 0;
-      align-items: center; justify-content: center;
-      border-radius: 8px; transition: background .15s;
-      color: #FFFFFF;
-      -webkit-tap-highlight-color: transparent;
-    }
-    .nav-hamburger:hover  { background: rgba(255,255,255,.1); }
-    .nav-hamburger:focus-visible { outline: 2px solid #1F6FEB; outline-offset: 2px; }
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&amp;family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,700&amp;display=swap" rel="stylesheet" />
 
-    /* ── MOBILE DRAWER ─────────────────────────────────── */
-    /* Opens BELOW the nav bar — no overlay, no animation,
-       fully reliable on iOS Safari. */
-    .mob-menu {
-      display: none;
-      position: fixed;
-      top: 68px;            /* nav bar height */
-      left: 0; right: 0; bottom: 0;
-      z-index: 9000;
-      background: #FFFFFF;
-      border-top: 1px solid #E5E7EB;
-      box-shadow: 0 8px 32px rgba(13,19,32,.18);
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-    }
-    .mob-menu.is-open { display: block; }
-
-    /* ── MENU LINKS ────────────────────────────────────── */
-    .mob-nav {
-      display: flex; flex-direction: column;
-      padding: 8px 0 calc(24px + env(safe-area-inset-bottom, 0px));
-    }
-    .mob-nav a {
-      display: flex; align-items: center;
-      min-height: 54px; padding: 0 24px;
-      font-size: 16px; font-weight: 600;
-      color: #0F172A;
-      text-decoration: none;
-      border-bottom: 1px solid #F1F5F9;
-      -webkit-tap-highlight-color: transparent;
-    }
-    .mob-nav a:last-of-type { border-bottom: none; }
-    .mob-nav a:active { background: #F1F5F9; }
-    .mob-nav a[aria-current="page"] { color: #F5A800; }
-    .mob-nav-cta {
-      display: flex; align-items: center; justify-content: center;
-      margin: 16px !important;
-      min-height: 52px !important;
-      background: #0D1320 !important; color: #FFFFFF !important;
-      border-radius: 12px !important;
-      font-size: 15px !important; font-weight: 700 !important;
-      text-decoration: none !important;
-      border-bottom: none !important;
-    }
-    .mob-nav-cta:active { background: #1a2540 !important; }
-
-    /* ── SHOW / HIDE ────────────────────────────────────── */
-    @media (max-width: 767px) { .nav-hamburger { display: flex; } }
-    @media (min-width: 768px) {
-      .mob-menu      { display: none !important; }
-      .nav-hamburger { display: none !important; }
-    }
-
-    /* ── DARK MODE ──────────────────────────────────────── */
-    @media (prefers-color-scheme: dark) {
-      /* Mobile drawer — white bg intentional for readability */
-      .nav-hamburger { color: #FFFFFF; }
-      .nav-hamburger:hover { background: rgba(255,255,255,.1); }
-    }
-
-    /* legal: hide nav-links on mobile */
-    @media(max-width:767px){.nav-links{display:none!important;}}
-  </style>
 
   <link rel="canonical" href="https://85blends.app/terms.html" />
-  <link rel="icon" href="/assets/app-icon.png" />
-  <link rel="apple-touch-icon" href="/assets/app-icon.png" />
+  <link rel="icon" href="/assets/app-icon-small.png" />
+  <link rel="apple-touch-icon" href="/assets/app-icon-small.png" />
   <link rel="manifest" href="/site.webmanifest" />
   <meta name="apple-itunes-app" content="app-id=6762037468" />
   <meta property="og:type" content="website" />
@@ -128,158 +25,222 @@
   <meta name="twitter:title" content="Terms of Use – 85Blends" />
   <meta name="twitter:description" content="Read the terms of use for the 85Blends iPhone app and website." />
   <meta name="twitter:image" content="https://85blends.app/assets/main-hero.png" />
-  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Organization","name":"JF Apps","url":"https://85blends.app","brand":{"@type":"Brand","name":"85Blends"},"logo":"https://85blends.app/assets/app-icon.png","sameAs":["https://www.instagram.com/85blendsapp/"]}</script>
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Organization","name":"JF Apps","url":"https://85blends.app","brand":{"@type":"Brand","name":"85Blends"},"logo":"https://85blends.app/assets/app-icon-small.png","sameAs":["https://www.instagram.com/85blendsapp/"]}</script>
   <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"85Blends","item":"https://85blends.app/"},{"@type":"ListItem","position":2,"name":"Terms of Use","item":"https://85blends.app/terms.html"}]}</script>
+<link rel="stylesheet" href="/assets/site.css">
+<script defer src="/assets/fuel-math.js">
+</script>
+<script defer src="/assets/site.js">
+</script>
 </head>
 <body>
-  <nav>
-    <a class="logo" href="/"><img src="assets/app-icon.png" alt="85Blends" /><span><b>85</b>Blends</span></a>
-    <div class="nav-links">
-      <a href="/">Home</a>
-      <a href="/features.html">Features</a>
-      <a href="/about.html">About</a>
-      <a href="/support.html">Support</a>
-      <a class="btn" href="https://apps.apple.com/us/app/85blends/id6762037468" target="_blank" rel="noopener">Download on the App Store</a>
-    </div>
-    <button class="nav-hamburger" id="nav-hamburger"
-        aria-label="Open navigation menu"
-        aria-expanded="false"
-        aria-controls="mob-menu">
-  <svg width="22" height="22" fill="none" viewBox="0 0 24 24"
-       stroke="currentColor" stroke-width="2.5" aria-hidden="true">
-    <path d="M4 6h16M4 12h16M4 18h16"/>
-  </svg>
-</button>
-  </nav>
-
-  <main>
+<a class="skip-link" href="#main-content">Skip to content</a>
+<header class="site-header">
+<div class="wrap header-inner">
+<a class="brand" href="/" aria-label="85Blends home">
+<img src="/assets/app-icon-small.webp" alt="" width="40" height="40"><span><b>85</b>Blends</span>
+</a>
+<nav class="desktop-nav" aria-label="Main navigation">
+<a href="/">Home</a>
+<a href="/features.html">Features</a>
+<a href="/e85-calculator.html">Calculator</a>
+<a href="/whats-new.html">What's New</a>
+<a href="/about.html">About</a>
+<a href="/support.html">Support</a>
+<a class="button" href="https://apps.apple.com/us/app/85blends/id6762037468" target="_blank" rel="noopener noreferrer">App Store ↗</a>
+</nav>
+<button id="menu-toggle" class="menu-toggle" aria-label="Open navigation" aria-expanded="false" aria-controls="mobile-navigation"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>Menu</button>
+</div>
+<nav id="mobile-navigation" class="mobile-nav" aria-label="Mobile navigation" hidden>
+<div class="wrap">
+<a href="/">Home</a>
+<a href="/features.html">Features</a>
+<a href="/e85-calculator.html">Calculator</a>
+<a href="/whats-new.html">What's New</a>
+<a href="/about.html">About</a>
+<a href="/support.html">Support</a>
+<div class="legal-links">
+<a href="/privacy.html">Privacy</a>
+<a href="/terms.html" aria-current="page">Terms</a>
+</div>
+<a class="button" href="https://apps.apple.com/us/app/85blends/id6762037468" target="_blank" rel="noopener noreferrer">Download on the App Store ↗</a>
+</div>
+</nav>
+</header>
+<noscript>
+<nav class="wrap jump-links" aria-label="Page navigation">
+<a href="/">Home</a>
+<a href="/features.html">Features</a>
+<a href="/e85-calculator.html">Calculator</a>
+<a href="/whats-new.html">What's New</a>
+<a href="/about.html">About</a>
+<a href="/support.html">Support</a>
+</nav></noscript>
+<main id="main-content" class="wrap reading-page">
     <div class="eyebrow">85Blends legal</div>
     <h1>Terms of Use</h1>
     <p class="intro">These Terms of Use explain the rules for using the 85Blends app and website.</p>
     <p class="updated">Last updated: June 8, 2026</p>
 
-    <section class="card">
-      <h2>Acceptance of these terms</h2>
+    <nav class="toc" aria-label="Contents">
+<h2>On this page</h2>
+<ol>
+<li>
+<a href="#policy-1">Acceptance of these terms</a>
+</li>
+<li>
+<a href="#policy-2">What 85Blends does</a>
+</li>
+<li>
+<a href="#policy-3">Estimates only</a>
+</li>
+<li>
+<a href="#policy-4">No mechanical, tuning, legal, or safety advice</a>
+</li>
+<li>
+<a href="#policy-5">Fueling and vehicle risk</a>
+</li>
+<li>
+<a href="#policy-6">Station and price information</a>
+</li>
+<li>
+<a href="#policy-7">Community submissions</a>
+</li>
+<li>
+<a href="#policy-8">Acceptable use</a>
+</li>
+<li>
+<a href="#policy-9">Intellectual property</a>
+</li>
+<li>
+<a href="#policy-10">Third-party services</a>
+</li>
+<li>
+<a href="#policy-11">Availability and changes</a>
+</li>
+<li>
+<a href="#policy-12">Disclaimer of warranties</a>
+</li>
+<li>
+<a href="#policy-13">Limitation of liability</a>
+</li>
+<li>
+<a href="#policy-14">Termination</a>
+</li>
+<li>
+<a href="#policy-15">Changes to these terms</a>
+</li>
+</ol>
+</nav>
+<section class="legal-body">
+      <h2 id="policy-1">Acceptance of these terms</h2>
       <p>By using the 85Blends app or website, you agree to these Terms of Use. If you do not agree, do not use the app or website.</p>
 
-      <h2>What 85Blends does</h2>
+      <h2 id="policy-2">What 85Blends does</h2>
       <p>85Blends provides tools for E85 and flex-fuel drivers, including ethanol blend calculations, station-related tools, vehicle profiles, fuel logs, reminders, and planning utilities.</p>
 
-      <h2>Estimates only</h2>
+      <h2 id="policy-3">Estimates only</h2>
       <p>85Blends provides estimates and planning tools only. Ethanol content, pump fuel quality, vehicle configuration, tuning, injector capacity, fuel system condition, weather, driving style, and other factors can affect real-world results. You are responsible for verifying that any fuel blend, fuel choice, or vehicle setup is safe and appropriate for your vehicle.</p>
 
-      <h2>No mechanical, tuning, legal, or safety advice</h2>
+      <h2 id="policy-4">No mechanical, tuning, legal, or safety advice</h2>
       <p>85Blends is not a substitute for professional mechanical, tuning, safety, emissions, or legal advice. Always follow your vehicle manufacturer guidance, tuner recommendations, local laws, fuel system limitations, and safety requirements.</p>
 
-      <h2>Fueling and vehicle risk</h2>
+      <h2 id="policy-5">Fueling and vehicle risk</h2>
       <p>You are solely responsible for how you use the app’s calculations and information. Incorrect fuel blends, inaccurate inputs, contaminated fuel, unsupported vehicle setups, or improper use may cause drivability issues or vehicle damage. 85Blends is not responsible for damage, losses, or issues caused by your fueling decisions or vehicle modifications.</p>
 
-      <h2>Station and price information</h2>
+      <h2 id="policy-6">Station and price information</h2>
       <p>Station availability, fuel type, pricing, and community reports may be incomplete, outdated, inaccurate, or unavailable. Always verify station details and pump labels before fueling.</p>
 
-      <h2>Community submissions</h2>
+      <h2 id="policy-7">Community submissions</h2>
       <p>If you submit station details, price reports, or other community information, you agree to provide accurate information to the best of your knowledge and not submit misleading, unlawful, harmful, or abusive content. We may remove or limit community content at our discretion.</p>
 
-      <h2>Acceptable use</h2>
+      <h2 id="policy-8">Acceptable use</h2>
       <ul>
         <li>Do not misuse, interfere with, reverse engineer, or disrupt the app, website, or related services.</li>
         <li>Do not submit false, harmful, abusive, infringing, or illegal content.</li>
         <li>Do not use the app or website in a way that violates applicable laws or regulations.</li>
       </ul>
 
-      <h2>Intellectual property</h2>
+      <h2 id="policy-9">Intellectual property</h2>
       <p>85Blends, including its name, branding, design, text, images, code, and related content, is owned by its developer or licensors and is protected by applicable intellectual property laws. You may not copy, reproduce, distribute, or create derivative works from 85Blends content except as allowed by law or with written permission.</p>
 
-      <h2>Third-party services</h2>
+      <h2 id="policy-10">Third-party services</h2>
       <p>85Blends may link to or rely on third-party services such as Apple services, map providers, station data providers, cloud services, or website hosting. Those third-party services are governed by their own terms and policies.</p>
 
-      <h2>Availability and changes</h2>
+      <h2 id="policy-11">Availability and changes</h2>
       <p>We may update, change, suspend, or discontinue any part of the app or website at any time. Features may change as the product evolves.</p>
 
-      <h2>Disclaimer of warranties</h2>
+      <h2 id="policy-12">Disclaimer of warranties</h2>
       <p>The app and website are provided “as is” and “as available” without warranties of any kind, whether express or implied. We do not guarantee that calculations, station data, price reports, reminders, or other information will be accurate, complete, uninterrupted, or error-free.</p>
 
-      <h2>Limitation of liability</h2>
+      <h2 id="policy-13">Limitation of liability</h2>
       <p>To the maximum extent permitted by law, 85Blends and its developer will not be liable for indirect, incidental, special, consequential, exemplary, or punitive damages, or for losses related to vehicle damage, fueling decisions, data loss, lost profits, or service interruption.</p>
 
-      <h2>Termination</h2>
+      <h2 id="policy-14">Termination</h2>
       <p>We may limit or terminate access to the app, website, or related services if we believe these terms have been violated or if needed to protect the product, users, or service integrity.</p>
 
-      <h2>Changes to these terms</h2>
+      <h2 id="policy-15">Changes to these terms</h2>
       <p>We may update these Terms of Use from time to time. When we do, we will update the “Last updated” date above. Continued use of the app or website after changes means you accept the updated terms.</p>
 
       <div class="notice"><strong>Questions?</strong> Contact <a href="mailto:support@85blends.app">support@85blends.app</a>.</div>
     </section>
   </main>
-
-  <footer>© 2026 JF Apps. 85Blends is a product of JF Apps. All rights reserved.</footer>
-
-
-
-<!-- MOBILE NAVIGATION MENU -->
-<div id="mob-menu" class="mob-menu" aria-hidden="true" role="navigation" aria-label="Mobile navigation">
-  <nav class="mob-nav">
-      <a href="/">Home</a>
-      <a href="/features.html">Features</a>
-      <a href="/about.html">About</a>
-      <a href="/support.html">Support</a>
-      <a href="/privacy.html">Privacy Policy</a>
-      <a href="/terms.html" aria-current="page">Terms of Use</a>
-      <a href="https://apps.apple.com/us/app/85blends/id6762037468" class="mob-nav-cta" target="_blank" rel="noopener">Download on the App Store</a>
-  </nav>
+<footer class="site-footer">
+<div class="wrap">
+<div class="footer-grid">
+<div class="footer-brand">
+<a class="brand" href="/"><span><b>85</b>Blends</span>
+</a>
+<p>Smarter fuel. Better blends.<br>Built for the E85 community.</p>
 </div>
-
-<script>
-/* Mobile navigation — simple toggle, reliable on iOS Safari */
-(function () {
-  var btn  = document.getElementById('nav-hamburger');
-  var menu = document.getElementById('mob-menu');
-  if (!btn || !menu) return;
-
-  var iconPath = btn.querySelector('path');
-  var BURGER = 'M4 6h16M4 12h16M4 18h16';
-  var CROSS  = 'M6 18L18 6M6 6l12 12';
-
-  function openMenu() {
-    menu.classList.add('is-open');
-    menu.setAttribute('aria-hidden', 'false');
-    btn.setAttribute('aria-expanded', 'true');
-    btn.setAttribute('aria-label', 'Close navigation menu');
-    if (iconPath) iconPath.setAttribute('d', CROSS);
-    document.body.style.overflow = 'hidden';
-  }
-
-  function closeMenu() {
-    menu.classList.remove('is-open');
-    menu.setAttribute('aria-hidden', 'true');
-    btn.setAttribute('aria-expanded', 'false');
-    btn.setAttribute('aria-label', 'Open navigation menu');
-    if (iconPath) iconPath.setAttribute('d', BURGER);
-    document.body.style.overflow = '';
-  }
-
-  btn.addEventListener('click', function () {
-    if (menu.classList.contains('is-open')) closeMenu(); else openMenu();
-  });
-
-  /* Close on any link tap */
-  menu.querySelectorAll('a').forEach(function (a) {
-    a.addEventListener('click', closeMenu);
-  });
-
-  /* Close on Escape */
-  document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') closeMenu();
-  });
-
-  /* Close if viewport resizes to desktop */
-  window.addEventListener('resize', function () {
-    if (window.innerWidth >= 768) closeMenu();
-  });
-}());
-</script>
-
-
-
+<div>
+<h3>Explore</h3>
+<ul>
+<li>
+<a href="/features.html">App features</a>
+</li>
+<li>
+<a href="/e85-calculator.html">Free calculator</a>
+</li>
+<li>
+<a href="/whats-new.html">What's new</a>
+</li>
+<li>
+<a href="/features.html#pricing">Free &amp; Pro</a>
+</li>
+</ul>
+</div>
+<div>
+<h3>Connect</h3>
+<ul>
+<li>
+<a href="/about.html">Our story</a>
+</li>
+<li>
+<a href="/support.html">Support</a>
+</li>
+<li>
+<a href="mailto:support@85blends.app">Email us</a>
+</li>
+<li>
+<a href="https://www.instagram.com/85blendsapp/" target="_blank" rel="noopener noreferrer">Instagram ↗</a>
+</li>
+</ul>
+</div>
+<div>
+<h3>Legal</h3>
+<ul>
+<li>
+<a href="/privacy.html">Privacy Policy</a>
+</li>
+<li>
+<a href="/terms.html">Terms of Use</a>
+</li>
+</ul>
+</div>
+</div>
+<div class="footer-bottom">© 2026 JF Apps. 85Blends is a product of JF Apps. All rights reserved.</div>
+</div>
+</footer>
 </body>
 </html>

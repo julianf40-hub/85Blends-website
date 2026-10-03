@@ -7,119 +7,12 @@
   <meta name="description" content="Get help with 85Blends, review common resources, learn about the latest release, and contact support.">
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    :root { --navy:#0D1320; --blue:#1F6FEB; --blue-dk:#1558C8; --gold:#F5A800; --gray:#6B7280; --text:#0F172A; --line:#E5E7EB; --soft:#F8FAFC; }
-    body { font-family:'DM Sans', sans-serif; color:var(--text); background:linear-gradient(180deg,#FFFFFF 0%,#F4F7FF 100%); line-height:1.65; }
-    nav { position:sticky; top:0; z-index:100; display:flex; align-items:center; justify-content:space-between; padding:0 48px; height:68px; background:rgba(13,19,32,.92); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); border-bottom:1px solid rgba(255,255,255,.08); }
-    .logo { display:flex; align-items:center; gap:10px; text-decoration:none; color:#FFFFFF; font-weight:700; font-size:20px; }
-    .logo img { width:40px; height:40px; border-radius:9px; object-fit:cover; }
-    .logo b { color:var(--gold); }
-    .nav-links { display:flex; gap:24px; align-items:center; }
-    .nav-links a { color:rgba(255,255,255,.72); text-decoration:none; font-size:15px; font-weight:600; }
-    .nav-links a:hover { color:#FFFFFF; }
-    .nav-links a[aria-current="page"] { color:var(--gold); font-weight:700; }
-    .btn { background:var(--blue); color:white !important; padding:10px 18px; border-radius:10px; text-decoration:none; }
-    main { max-width:980px; margin:0 auto; padding:72px 24px 96px; }
-    .eyebrow { color:var(--blue); text-transform:uppercase; letter-spacing:.14em; font-size:13px; font-weight:800; margin-bottom:12px; }
-    h1 { font-size:clamp(40px,6vw,68px); line-height:1; letter-spacing:-.05em; margin-bottom:18px; }
-    .intro { color:#475569; font-size:19px; max-width:760px; margin-bottom:36px; }
-    .grid { display:grid; grid-template-columns:1.2fr .8fr; gap:24px; align-items:start; }
-    .card { background:rgba(255,255,255,.92); border:1px solid var(--line); border-radius:24px; padding:30px; box-shadow:0 18px 60px rgba(15,23,42,.08); }
-    h2 { font-size:24px; line-height:1.2; margin-bottom:12px; }
-    h3 { font-size:17px; margin:24px 0 6px; }
-    p, li { color:#475569; font-size:16px; }
-    ul { padding-left:22px; margin-top:10px; }
-    a { color:var(--blue); font-weight:700; }
-    .contact-box { background:#EFF6FF; border:1px solid #BFDBFE; border-radius:18px; padding:20px; margin-top:18px; }
-    .email-link { display:inline-flex; align-items:center; justify-content:center; background:var(--blue); color:white; text-decoration:none; padding:14px 20px; border-radius:12px; margin-top:14px; }
-    .quick-list { display:grid; gap:12px; }
-    .quick-item { padding:16px; border:1px solid var(--line); border-radius:16px; background:white; }
-    .quick-item strong { display:block; margin-bottom:4px; }
-    footer { border-top:1px solid var(--line); text-align:center; color:var(--gray); padding:28px 20px; background:white; }
-    @media (max-width:800px) { nav{padding:0 18px}.nav-links a:not(.btn){display:none}.grid{grid-template-columns:1fr}.card{padding:24px} }
-  
-    /* ── HAMBURGER ────────────────────────────────────── */
-    .nav-hamburger {
-      display: none;
-      background: none; border: none; cursor: pointer;
-      width: 44px; height: 44px; flex-shrink: 0;
-      align-items: center; justify-content: center;
-      border-radius: 8px; transition: background .15s;
-      color: #FFFFFF;
-      -webkit-tap-highlight-color: transparent;
-    }
-    .nav-hamburger:hover  { background: rgba(255,255,255,.1); }
-    .nav-hamburger:focus-visible { outline: 2px solid #1F6FEB; outline-offset: 2px; }
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&amp;family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,700&amp;display=swap" rel="stylesheet" />
 
-    /* ── MOBILE DRAWER ─────────────────────────────────── */
-    /* Opens BELOW the nav bar — no overlay, no animation,
-       fully reliable on iOS Safari. */
-    .mob-menu {
-      display: none;
-      position: fixed;
-      top: 68px;            /* nav bar height */
-      left: 0; right: 0; bottom: 0;
-      z-index: 9000;
-      background: #FFFFFF;
-      border-top: 1px solid #E5E7EB;
-      box-shadow: 0 8px 32px rgba(13,19,32,.18);
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-    }
-    .mob-menu.is-open { display: block; }
-
-    /* ── MENU LINKS ────────────────────────────────────── */
-    .mob-nav {
-      display: flex; flex-direction: column;
-      padding: 8px 0 calc(24px + env(safe-area-inset-bottom, 0px));
-    }
-    .mob-nav a {
-      display: flex; align-items: center;
-      min-height: 54px; padding: 0 24px;
-      font-size: 16px; font-weight: 600;
-      color: #0F172A;
-      text-decoration: none;
-      border-bottom: 1px solid #F1F5F9;
-      -webkit-tap-highlight-color: transparent;
-    }
-    .mob-nav a:last-of-type { border-bottom: none; }
-    .mob-nav a:active { background: #F1F5F9; }
-    .mob-nav a[aria-current="page"] { color: #F5A800; }
-    .mob-nav-cta {
-      display: flex; align-items: center; justify-content: center;
-      margin: 16px !important;
-      min-height: 52px !important;
-      background: #0D1320 !important; color: #FFFFFF !important;
-      border-radius: 12px !important;
-      font-size: 15px !important; font-weight: 700 !important;
-      text-decoration: none !important;
-      border-bottom: none !important;
-    }
-    .mob-nav-cta:active { background: #1a2540 !important; }
-
-    /* ── SHOW / HIDE ────────────────────────────────────── */
-    @media (max-width: 767px) { .nav-hamburger { display: flex; } }
-    @media (min-width: 768px) {
-      .mob-menu      { display: none !important; }
-      .nav-hamburger { display: none !important; }
-    }
-
-    /* ── DARK MODE ──────────────────────────────────────── */
-    @media (prefers-color-scheme: dark) {
-      /* Mobile drawer — white bg intentional for readability */
-      .nav-hamburger { color: #FFFFFF; }
-      .nav-hamburger:hover { background: rgba(255,255,255,.1); }
-    }
-
-    /* legal: hide nav-links on mobile */
-    @media(max-width:767px){.nav-links{display:none!important;}}
-  </style>
 
   <link rel="canonical" href="https://85blends.app/support.html" />
-  <link rel="icon" href="/assets/app-icon.png" />
-  <link rel="apple-touch-icon" href="/assets/app-icon.png" />
+  <link rel="icon" href="/assets/app-icon-small.png" />
+  <link rel="apple-touch-icon" href="/assets/app-icon-small.png" />
   <link rel="manifest" href="/site.webmanifest" />
   <meta name="apple-itunes-app" content="app-id=6762037468" />
   <meta property="og:type" content="website" />
@@ -132,147 +25,176 @@
   <meta name="twitter:title" content="85Blends Support" />
   <meta name="twitter:description" content="Get help with 85Blends, review common resources, learn about the latest release, and contact support." />
   <meta name="twitter:image" content="https://85blends.app/assets/main-hero.png" />
-  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Organization","name":"JF Apps","url":"https://85blends.app","brand":{"@type":"Brand","name":"85Blends"},"logo":"https://85blends.app/assets/app-icon.png","sameAs":["https://www.instagram.com/85blendsapp/"]}</script>
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Organization","name":"JF Apps","url":"https://85blends.app","brand":{"@type":"Brand","name":"85Blends"},"logo":"https://85blends.app/assets/app-icon-small.png","sameAs":["https://www.instagram.com/85blendsapp/"]}</script>
   <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"85Blends","item":"https://85blends.app/"},{"@type":"ListItem","position":2,"name":"85Blends Support","item":"https://85blends.app/support.html"}]}</script>
+<link rel="stylesheet" href="/assets/site.css">
+<script defer src="/assets/fuel-math.js">
+</script>
+<script defer src="/assets/site.js">
+</script>
 </head>
 <body>
-  <nav>
-    <a class="logo" href="/"><img src="assets/app-icon.png" alt="85Blends" /><span><b>85</b>Blends</span></a>
-    <div class="nav-links">
-      <a href="/">Home</a>
-      <a href="/features.html">Features</a>
-      <a href="/about.html">About</a>
-      <a href="/support.html" aria-current="page">Support</a>
-      <a class="btn" href="https://apps.apple.com/us/app/85blends/id6762037468" target="_blank" rel="noopener">Download on the App Store</a>
-    </div>
-    <button class="nav-hamburger" id="nav-hamburger"
-        aria-label="Open navigation menu"
-        aria-expanded="false"
-        aria-controls="mob-menu">
-  <svg width="22" height="22" fill="none" viewBox="0 0 24 24"
-       stroke="currentColor" stroke-width="2.5" aria-hidden="true">
-    <path d="M4 6h16M4 12h16M4 18h16"/>
-  </svg>
-</button>
-  </nav>
-
-  <main>
-    <div class="eyebrow">85Blends help</div>
-    <h1>Support</h1>
-    <p class="intro">Need help with 85Blends, have feedback, or want to report an issue with the app or website? We’re here to help.</p>
-
-    <div class="grid">
-      <section class="card">
-        <h2>Contact support</h2>
-        <p>Email us with your question, issue, or feedback. Please include helpful details like your app version, iPhone model, iOS version, and what you were trying to do.</p>
-        <div class="contact-box">
-          <p><strong>Support email:</strong></p>
-          <a class="email-link" href="mailto:support@85blends.app">support@85blends.app</a>
-        </div>
-
-        <h3>Helpful details to include</h3>
-        <ul>
-          <li>What screen or feature you were using, such as Calculator, Stations, Garage, Fuel Log, or Reminders.</li>
-          <li>Steps to reproduce the issue.</li>
-          <li>Screenshots, if they help explain the problem.</li>
-          <li>Your vehicle setup details only if relevant to the issue.</li>
-        </ul>
-
-        <h3>Station or price reports</h3>
-        <p>If you notice incorrect E85 station information or stale fuel price details, send the station name, address, and what needs to be updated.</p>
-      </section>
-
-      <aside class="card">
-        <h2>Quick links</h2>
-        <div class="quick-list">
-          <div class="quick-item">
-            <strong>Privacy Policy</strong>
-            <p>How 85Blends handles app and website information.</p>
-            <a href="/privacy.html">View privacy policy</a>
-          </div>
-          <div class="quick-item">
-            <strong>Terms of Use</strong>
-            <p>Rules and disclaimers for using 85Blends.</p>
-            <a href="/terms.html">View terms</a>
-          </div>
-          <div class="quick-item">
-            <strong>App status</strong>
-            <p>85Blends is live on the App Store.</p>
-            <a href="https://apps.apple.com/us/app/85blends/id6762037468" target="_blank" rel="noopener">Download on the App Store</a>
-          </div>
-        </div>
-      </aside>
-    </div>
-  </main>
-
-  <footer>© 2026 JF Apps. 85Blends is a product of JF Apps. All rights reserved.</footer>
-
-
-
-<!-- MOBILE NAVIGATION MENU -->
-<div id="mob-menu" class="mob-menu" aria-hidden="true" role="navigation" aria-label="Mobile navigation">
-  <nav class="mob-nav">
-      <a href="/">Home</a>
-      <a href="/features.html">Features</a>
-      <a href="/about.html">About</a>
-      <a href="/support.html" aria-current="page">Support</a>
-      <a href="/privacy.html">Privacy Policy</a>
-      <a href="/terms.html">Terms of Use</a>
-      <a href="https://apps.apple.com/us/app/85blends/id6762037468" class="mob-nav-cta" target="_blank" rel="noopener">Download on the App Store</a>
-  </nav>
+<a class="skip-link" href="#main-content">Skip to content</a>
+<header class="site-header">
+<div class="wrap header-inner">
+<a class="brand" href="/" aria-label="85Blends home">
+<img src="/assets/app-icon-small.webp" alt="" width="40" height="40"><span><b>85</b>Blends</span>
+</a>
+<nav class="desktop-nav" aria-label="Main navigation">
+<a href="/">Home</a>
+<a href="/features.html">Features</a>
+<a href="/e85-calculator.html">Calculator</a>
+<a href="/whats-new.html">What's New</a>
+<a href="/about.html">About</a>
+<a href="/support.html" aria-current="page">Support</a>
+<a class="button" href="https://apps.apple.com/us/app/85blends/id6762037468" target="_blank" rel="noopener noreferrer">App Store ↗</a>
+</nav>
+<button id="menu-toggle" class="menu-toggle" aria-label="Open navigation" aria-expanded="false" aria-controls="mobile-navigation"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>Menu</button>
 </div>
-
-<script>
-/* Mobile navigation — simple toggle, reliable on iOS Safari */
-(function () {
-  var btn  = document.getElementById('nav-hamburger');
-  var menu = document.getElementById('mob-menu');
-  if (!btn || !menu) return;
-
-  var iconPath = btn.querySelector('path');
-  var BURGER = 'M4 6h16M4 12h16M4 18h16';
-  var CROSS  = 'M6 18L18 6M6 6l12 12';
-
-  function openMenu() {
-    menu.classList.add('is-open');
-    menu.setAttribute('aria-hidden', 'false');
-    btn.setAttribute('aria-expanded', 'true');
-    btn.setAttribute('aria-label', 'Close navigation menu');
-    if (iconPath) iconPath.setAttribute('d', CROSS);
-    document.body.style.overflow = 'hidden';
-  }
-
-  function closeMenu() {
-    menu.classList.remove('is-open');
-    menu.setAttribute('aria-hidden', 'true');
-    btn.setAttribute('aria-expanded', 'false');
-    btn.setAttribute('aria-label', 'Open navigation menu');
-    if (iconPath) iconPath.setAttribute('d', BURGER);
-    document.body.style.overflow = '';
-  }
-
-  btn.addEventListener('click', function () {
-    if (menu.classList.contains('is-open')) closeMenu(); else openMenu();
-  });
-
-  /* Close on any link tap */
-  menu.querySelectorAll('a').forEach(function (a) {
-    a.addEventListener('click', closeMenu);
-  });
-
-  /* Close on Escape */
-  document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') closeMenu();
-  });
-
-  /* Close if viewport resizes to desktop */
-  window.addEventListener('resize', function () {
-    if (window.innerWidth >= 768) closeMenu();
-  });
-}());
-</script>
-
-
-
+<nav id="mobile-navigation" class="mobile-nav" aria-label="Mobile navigation" hidden>
+<div class="wrap">
+<a href="/">Home</a>
+<a href="/features.html">Features</a>
+<a href="/e85-calculator.html">Calculator</a>
+<a href="/whats-new.html">What's New</a>
+<a href="/about.html">About</a>
+<a href="/support.html" aria-current="page">Support</a>
+<div class="legal-links">
+<a href="/privacy.html">Privacy</a>
+<a href="/terms.html">Terms</a>
+</div>
+<a class="button" href="https://apps.apple.com/us/app/85blends/id6762037468" target="_blank" rel="noopener noreferrer">Download on the App Store ↗</a>
+</div>
+</nav>
+</header>
+<noscript>
+<nav class="wrap jump-links" aria-label="Page navigation">
+<a href="/">Home</a>
+<a href="/features.html">Features</a>
+<a href="/e85-calculator.html">Calculator</a>
+<a href="/whats-new.html">What's New</a>
+<a href="/about.html">About</a>
+<a href="/support.html" aria-current="page">Support</a>
+</nav></noscript>
+<main id="main-content" class="wrap reading-page">
+<div class="eyebrow">85Blends help</div>
+<h1>How can we help?</h1>
+<p class="intro">Questions, feedback, or an issue with the app or website? Tell us what’s happening.</p>
+<div class="support-contact">
+<a class="button" href="mailto:support@85blends.app">Email support →</a>
+<a class="email-address" href="mailto:support@85blends.app">support@85blends.app</a>
+</div>
+<div class="support-grid">
+<section>
+<h2>Help us help you.</h2>
+<p>For app issues, please include your app version, iPhone model, iOS version, and what you were trying to do.</p>
+<ul>
+<li>The screen or feature you were using.</li>
+<li>Steps to reproduce the issue.</li>
+<li>Screenshots, if useful.</li>
+<li>Vehicle setup details only if relevant.</li>
+</ul>
+<h3 style="margin-top:28px">Station or price corrections</h3>
+<p>Send the station name, address, and details that need updating. Community data can become stale; verify pump labels before fueling.</p>
+</section>
+<aside>
+<h2>Useful links</h2>
+<ul class="help-links">
+<li>
+<a href="/e85-calculator.html">Free web calculator →</a>
+<p>Plan a full-tank blend with your pump percentages.</p>
+</li>
+<li>
+<a href="/features.html#pricing">Free &amp; Pro →</a>
+<p>See included tools and subscription choices.</p>
+</li>
+<li>
+<a href="/whats-new.html">What’s new →</a>
+<p>Preview the upcoming 2.4.0 highlights.</p>
+</li>
+<li>
+<a href="/privacy.html">Privacy Policy →</a>
+<p>How app and website information is handled.</p>
+</li>
+<li>
+<a href="/terms.html">Terms of Use →</a>
+<p>Usage rules and planning disclaimers.</p>
+</li>
+</ul>
+</aside>
+</div>
+<section class="help-topics">
+<h2>Common help topics</h2>
+<details>
+<summary>Why can’t I reach my target blend?</summary>
+<p>The fuel already in your tank and the pump percentages limit the range you can reach when filling it. The <a href="/e85-calculator.html">web calculator</a> shows the reachable range. Recheck measured values rather than assuming every E85 pump contains 85% ethanol.</p>
+</details>
+<details>
+<summary>Why does a cheaper fill-up cost more to drive?</summary>
+<p>Higher ethanol blends can reduce MPG. The homepage comparison separates fill-up price from estimated cost per 100 miles, so you can compare the same driving distance.</p>
+</details>
+<details>
+<summary>Where are Pro subscriptions managed?</summary>
+<p>Pro is purchased through the App Store. You can manage or cancel your subscription through Settings on your iPhone. If your access doesn’t look right, email us with your app version and a description of the issue; never send payment details.</p>
+</details>
+</section>
+</main>
+<footer class="site-footer">
+<div class="wrap">
+<div class="footer-grid">
+<div class="footer-brand">
+<a class="brand" href="/"><span><b>85</b>Blends</span>
+</a>
+<p>Smarter fuel. Better blends.<br>Built for the E85 community.</p>
+</div>
+<div>
+<h3>Explore</h3>
+<ul>
+<li>
+<a href="/features.html">App features</a>
+</li>
+<li>
+<a href="/e85-calculator.html">Free calculator</a>
+</li>
+<li>
+<a href="/whats-new.html">What's new</a>
+</li>
+<li>
+<a href="/features.html#pricing">Free &amp; Pro</a>
+</li>
+</ul>
+</div>
+<div>
+<h3>Connect</h3>
+<ul>
+<li>
+<a href="/about.html">Our story</a>
+</li>
+<li>
+<a href="/support.html">Support</a>
+</li>
+<li>
+<a href="mailto:support@85blends.app">Email us</a>
+</li>
+<li>
+<a href="https://www.instagram.com/85blendsapp/" target="_blank" rel="noopener noreferrer">Instagram ↗</a>
+</li>
+</ul>
+</div>
+<div>
+<h3>Legal</h3>
+<ul>
+<li>
+<a href="/privacy.html">Privacy Policy</a>
+</li>
+<li>
+<a href="/terms.html">Terms of Use</a>
+</li>
+</ul>
+</div>
+</div>
+<div class="footer-bottom">© 2026 JF Apps. 85Blends is a product of JF Apps. All rights reserved.</div>
+</div>
+</footer>
 </body>
 </html>
