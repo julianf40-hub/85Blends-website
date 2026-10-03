@@ -1086,13 +1086,17 @@
     .plan-option .plan-note { color:#64748B; font-size:12px; }
     .partner-section { padding:72px 80px; background:#F8FAFC; border-top:1px solid #E5E7EB; }
     .partner-inner { max-width:1040px; margin:0 auto; }
-    .partner-card { display:grid; grid-template-columns:140px 1fr auto; gap:28px; align-items:center; background:white; border:1.5px solid #E5E7EB; border-radius:18px; padding:26px; text-decoration:none; color:inherit; }
-    .partner-card img { width:130px; max-height:70px; object-fit:contain; }
+    .partner-card { display:grid; grid-template-columns:230px minmax(0,1fr) auto; gap:30px; align-items:center; background:white; border:1.5px solid #E5E7EB; border-radius:20px; padding:22px; text-decoration:none; color:inherit; box-shadow:0 8px 30px rgba(15,23,42,.06); transition:border-color .2s ease, box-shadow .2s ease, transform .2s ease; }
+    .partner-card:hover { border-color:rgba(37,99,235,.35); box-shadow:0 14px 38px rgba(15,23,42,.1); transform:translateY(-2px); }
+    .partner-card:focus-visible { outline:3px solid rgba(37,99,235,.35); outline-offset:4px; }
+    .partner-logo { display:flex; align-items:center; justify-content:center; min-height:154px; padding:16px; overflow:hidden; background:#000; border:1px solid #111827; border-radius:15px; }
+    .partner-logo img { display:block; width:100%; max-width:205px; height:auto; object-fit:contain; }
     .partner-card h3 { margin:0 0 6px; font-size:19px; }
     .partner-card p { color:#64748B; line-height:1.6; font-size:14px; }
     .partner-card .partner-cta { color:var(--blue); font-weight:800; white-space:nowrap; }
     .partner-note { margin-top:12px; color:#64748B; text-align:center; font-size:12px; }
-    @media(max-width:800px){ .release-section,.partner-section{padding:56px 24px}.release-grid{grid-template-columns:1fr}.plan-options{grid-template-columns:1fr}.partner-card{grid-template-columns:1fr;text-align:center}.partner-card img{margin:auto}.partner-card .partner-cta{white-space:normal} }
+    @media(max-width:800px){ .release-section,.partner-section{padding:56px 24px}.release-grid{grid-template-columns:1fr}.plan-options{grid-template-columns:1fr}.partner-card{grid-template-columns:1fr;gap:20px;padding:20px;text-align:center}.partner-logo{width:100%;max-width:320px;min-height:180px;margin:auto}.partner-logo img{max-width:240px}.partner-card .partner-cta{white-space:normal} }
+    @media(max-width:480px){ .partner-section{padding:48px 20px}.partner-card{padding:16px}.partner-logo{min-height:160px}.partner-logo img{max-width:220px} }
 
   </style>
 
@@ -1623,7 +1627,7 @@
   <div class="partner-inner">
     <div style="text-align:center;margin-bottom:26px;"><div class="features-section-eyebrow">Partners &amp; Recommended Gear</div><h2 class="features-section-title" id="partners-heading">Built with the community.</h2></div>
     <a class="partner-card" href="https://rvpsupply.com" target="_blank" rel="noopener noreferrer">
-      <picture><source srcset="assets/rvpsupply-logo.webp" type="image/webp"><img src="assets/rvpsupply-logo.png" alt="RVPSupply" loading="lazy" decoding="async"></picture>
+      <picture class="partner-logo"><source srcset="assets/rvpsupply-logo.webp" type="image/webp"><img src="assets/rvpsupply-logo.png" alt="RVPSupply" width="720" height="485" loading="lazy" decoding="async"></picture>
       <div><h3>RVPSupply · Founding Supporter</h3><p>Automotive parts and enthusiast-focused gear from a supporter that helped 85Blends grow from an idea into a real app.</p></div>
       <div class="partner-cta">Visit RVPSupply →</div>
     </a>
