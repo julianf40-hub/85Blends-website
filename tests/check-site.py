@@ -37,7 +37,7 @@ for file in sorted(BASE.glob("*.html")):
     assert len(doc.ids)==len(set(doc.ids)), (file.name,"duplicate id")
     assert "main-content" in doc.ids
     assert "mobile-navigation" in doc.ids
-assert len(pages)==9
+assert len(pages)==10
 assert all(shell==shells[0] for shell in shells), "Shared header/footer drift"
 for name,doc in pages.items():
     for ref in doc.refs:
@@ -72,6 +72,19 @@ for required in ('Last updated: October 20, 2026', 'id="policy-13"', 'Supabase',
 for required in ("Request data deletion", "85Blends Data Deletion Request", "support@85blends.app", "Android", "iPhone", "no universal automatic 90-day", 'id="request"', 'id="scope"'):
     assert required in deletion, ("data-deletion page missing", required)
 assert '/data-deletion.html' in support, "Support must link to data deletion"
+android=(BASE/"android.html").read_text()
+assert "not available on Google Play yet" in android, "Android page must state its release status"
+assert "Android · in active development" in android
+assert "no Google Play download link" in android
+assert "https://www.instagram.com/85blendsapp/" in android
+for file in ("index.html","features.html","about.html","whats-new.html"):
+    source=(BASE/file).read_text()
+    assert "Price Alerts are planned" not in source, (file,"stale Price Alerts promise")
+    assert "public App Store version is currently 2.3.2" not in source, (file,"stale release claim")
+    assert "/android.html" in source, (file,"missing Android entry")
+sitemap=(BASE/"sitemap.xml").read_text()
+assert "https://85blends.app/android.html" in sitemap, "Android page missing from sitemap"
+
 
 home=(BASE/"index.html").read_text()
 for schema in pages["index.html"].json_scripts:
@@ -82,6 +95,6 @@ for schema in pages["index.html"].json_scripts:
         text=Text(); text.feed(match.group(1))
         assert " ".join("".join(text.text).split())==entry['acceptedAnswer']['text'],("FAQ schema drift",entry['name'])
 
-print("PASS: 9 pages, single h1, unique IDs, local files/anchors, image alt, valid structured data.")
+print("PASS: 10 pages, single h1, unique IDs, local files/anchors, image alt, valid structured data.")
 print("PASS: Terms text preserved; privacy/data-deletion content and support link validated.")
 print("PASS: Shared header/footer match on all pages; FAQ structured data matches visible answers.")
