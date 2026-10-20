@@ -7,5 +7,6 @@
   <url><loc>https://85blends.app/about.html</loc><changefreq>weekly</changefreq><priority>0.7</priority></url>
   <url><loc>https://85blends.app/support.html</loc><changefreq>weekly</changefreq><priority>0.7</priority></url>
   <url><loc>https://85blends.app/privacy.html</loc><changefreq>weekly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://85blends.app/data-deletion.html</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://85blends.app/terms.html</loc><changefreq>weekly</changefreq><priority>0.7</priority></url>
 </urlset>
