@@ -37,7 +37,7 @@ for file in sorted(BASE.glob("*.html")):
     assert len(doc.ids)==len(set(doc.ids)), (file.name,"duplicate id")
     assert "main-content" in doc.ids
     assert "mobile-navigation" in doc.ids
-assert len(pages)==8
+assert len(pages)==9
 assert all(shell==shells[0] for shell in shells), "Shared header/footer drift"
 for name,doc in pages.items():
     for ref in doc.refs:
@@ -60,10 +60,18 @@ def legal_text(html):
     else: start=html.index('<section class="card">',html.index("<main>"))
     end=html.index("</section>",start)
     parser=Text(); parser.feed(html[start:end]); return " ".join(" ".join(parser.text).split())
-for file in ("privacy.html","terms.html"):
-    before=subprocess.check_output(["git","show","origin/main:"+file],cwd=BASE,text=True)
-    after=(BASE/file).read_text()
-    assert legal_text(before)==legal_text(after),(file,"legal text changed")
+# Terms text must remain unchanged; Privacy is intentionally updated for Android and data deletion.
+before=subprocess.check_output(["git","show","origin/main:terms.html"],cwd=BASE,text=True)
+after=(BASE/"terms.html").read_text()
+assert legal_text(before)==legal_text(after),("terms.html","legal text changed")
+privacy=(BASE/"privacy.html").read_text()
+deletion=(BASE/"data-deletion.html").read_text()
+support=(BASE/"support.html").read_text()
+for required in ('Last updated: October 20, 2026', 'id="policy-13"', 'Supabase', 'Android', 'iCloud', '/data-deletion.html'):
+    assert required in privacy, ("privacy disclosure missing", required)
+for required in ("Request data deletion", "85Blends Data Deletion Request", "support@85blends.app", "Android", "iPhone", "no universal automatic 90-day", 'id="request"', 'id="scope"'):
+    assert required in deletion, ("data-deletion page missing", required)
+assert '/data-deletion.html' in support, "Support must link to data deletion"
 
 home=(BASE/"index.html").read_text()
 for schema in pages["index.html"].json_scripts:
@@ -74,6 +82,6 @@ for schema in pages["index.html"].json_scripts:
         text=Text(); text.feed(match.group(1))
         assert " ".join("".join(text.text).split())==entry['acceptedAnswer']['text'],("FAQ schema drift",entry['name'])
 
-print("PASS: 8 pages, single h1, unique IDs, local files/anchors, image alt, valid structured data.")
-print("PASS: Privacy and Terms document text is unchanged from origin/main.")
+print("PASS: 9 pages, single h1, unique IDs, local files/anchors, image alt, valid structured data.")
+print("PASS: Terms text preserved; privacy/data-deletion content and support link validated.")
 print("PASS: Shared header/footer match on all pages; FAQ structured data matches visible answers.")
