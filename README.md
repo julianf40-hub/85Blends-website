@@ -12,7 +12,10 @@ Run `python3 -m http.server 4173 --bind 127.0.0.1` from this directory and open 
 - `assets/site.js`: disclosure navigation, download bar, and calculator UI.
 - `assets/fuel-math.js`: dependency-free blend and cost calculations.
 - The same semantic header/footer and pricing markup are used across pages. Legal document text is protected by a comparison check.
-- 2.4.0 additions are explicitly previews while the U.S. public App Store listing remains at 2.3.2. Update availability copy only after verifying the public release; do not change app release state from this repo.
+- Public iPhone availability and Android development status must be kept separate. Check the current App Store for iOS version and offered subscriptions; avoid unverified static version claims.
+- The Android page is a development preview only. There is no Google Play download URL or open public beta until launch/test readiness is confirmed. Device-tested features are derived from the separate `85Blends-Android` repository.
+- The iPhone app imagery on other pages is genuine historical iOS imagery. Do not reuse it to portray Android screens; add official Android screenshots from a real app build before the Play listing goes live.
+- The privacy policy and data-deletion instructions cover both platforms. Confirm the live HTTPS pages work before entering the URLs in Google Play Console.
 
 ## Checks
 
