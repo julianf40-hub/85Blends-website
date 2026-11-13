@@ -186,10 +186,12 @@ export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock
   }
 
   // What the next publication is compared with. Normally the latest recorded publication; after
-  // acknowledged drift with a VALID foreign document, that document (devices may hold it).
+  // acknowledged drift with a foreign document that PASSES catalog validation, that document.
+  // Passing validation means a conforming client could have accepted it; whether any device or
+  // cache actually holds it is unknown (device and CDN state are not observable from here).
   async function reviewBaseline(target) {
     const storage = await inspectStorage(target);
-    if (storage.state === 'drift' && storage.acknowledged && storage.deviceAcceptable) {
+    if (storage.state === 'drift' && storage.acknowledged && storage.passesValidation) {
       const origin = await readOrigin(target);
       return { source: 'acknowledged_storage', document: JSON.parse(new TextDecoder().decode(origin)), bytes: origin };
     }
@@ -276,8 +278,13 @@ export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock
     const ack = (await driftAcks(target)).find((a) => a.digest === originDigest) ?? null;
     let validationError = null;
     try { parseBytes(origin); } catch (error) { validationError = error.message; }
+    const passesValidation = validationError === null;
+    const foreignPublishedAt = typeof foreign?.publishedAt === 'number' ? foreign.publishedAt : null;
+    // A valid catalog stamped far in the future is an incident: conforming clients that accepted it
+    // would reject every normally stamped publication until then. Default: block and report.
+    const futureIncident = passesValidation && foreignPublishedAt !== null && foreignPublishedAt > Math.floor(clock() / 1000) + MAX_FUTURE_SKEW_SECONDS;
     return {
-      ...base, state: 'drift', acknowledged: !!ack, deviceAcceptable: validationError === null, validationError,
+      ...base, state: 'drift', acknowledged: !!ack, passesValidation, validationError, futureIncident,
       reason: known ? `Storage holds an OLDER recorded publication (${known.revision}): a late upload or a manual re-upload overwrote the latest`
         : 'Storage holds bytes no publication recorded: a writer bypassed the publish lock (CLI, dashboard upload or another tool)',
       originRevision: foreign?.revision ?? null, originPublishedAt: typeof foreign?.publishedAt === 'number' ? foreign.publishedAt : null,
@@ -294,6 +301,11 @@ export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock
     return withPublishLock(async () => {
       // 1. Reconcile Storage with the database BEFORE anything else (repairs a crashed or uncertain upload).
       const storage = await inspectStorage(target, { repair: true });
+      // Far-future incident: block and report. No automatic overwrite, no timestamp leap.
+      if (storage.state === 'drift' && storage.futureIncident) {
+        await audit({ event: 'incident_future_timestamp_blocked_publish', target, user: user.email, digest: storage.originDigest, publishedAt: storage.originPublishedAt });
+        throw new HttpError(409, 'incident_future_timestamp', `${target}: Storage holds a valid catalog stamped ${storage.originPublishedAt} (more than ${MAX_FUTURE_SKEW_SECONDS} s ahead). Publishing is blocked and the incident is reported; it is not resolved automatically.`, { storage });
+      }
       if (storage.state === 'drift' && !storage.acknowledged) {
         throw new HttpError(409, 'storage_drift', `${target}: ${storage.reason}. A publisher must review and acknowledge it before publishing.`, { storage });
       }
@@ -304,9 +316,10 @@ export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock
         throw new HttpError(409, 'live_changed', `${target} changed since you reviewed it (now ${head?.revision ?? 'nothing published'}). Review the new changes, then publish again.`, { live: head });
       }
       const now = Math.floor(clock() / 1000);
-      // An acknowledged foreign document may be on devices: everything after it must be newer.
-      const foreignOnDevices = storage.state === 'drift' && storage.acknowledged && storage.deviceAcceptable;
-      const foreignFloor = foreignOnDevices ? storage.originPublishedAt ?? 0 : 0;
+      // An acknowledged foreign document that passes validation could have been accepted by a
+      // conforming client (device/cache state unknown): everything after it must be newer.
+      const foreignMayBeAccepted = storage.state === 'drift' && storage.acknowledged && storage.passesValidation;
+      const foreignFloor = foreignMayBeAccepted ? storage.originPublishedAt ?? 0 : 0;
       const highest = Math.max(head?.publishedAt ?? 0, foreignFloor);
       if (highest > now + MAX_FUTURE_SKEW_SECONDS) {
         throw new HttpError(409, 'live_in_future', `The ${target} publishedAt (${highest}) is more than ${MAX_FUTURE_SKEW_SECONDS} s in the future; resolve the clock problem first`);
@@ -318,10 +331,10 @@ export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock
       const document = { schemaVersion: 1, revision: randomUUID(), publishedAt, brands };
       const bytes = encodeCatalog(document);
       const rows = await history(target);
-      const used = [...rows.map((h) => h.revision), ...(foreignOnDevices && storage.originRevision ? [storage.originRevision] : [])];
+      const used = [...rows.map((h) => h.revision), ...(foreignMayBeAccepted && storage.originRevision ? [storage.originRevision] : [])];
       try {
         parseBytes(bytes);
-        const live = foreignOnDevices ? await readOrigin(target) : head ? new TextEncoder().encode(rows.at(-1).document) : null;
+        const live = foreignMayBeAccepted ? await readOrigin(target) : head ? new TextEncoder().encode(rows.at(-1).document) : null;
         if (live) {
           const liveDoc = JSON.parse(new TextDecoder().decode(live));
           if (checkSuccessor(liveDoc, live, document, bytes, used) !== 'newer') throw new CatalogRejected('identical to the live publication');
@@ -463,17 +476,18 @@ export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock
       return send(res, 200, await withPublishLock(async () => {
         const storage = await inspectStorage(body.target);
         if (storage.state !== 'drift' || storage.originDigest !== body.digest) throw new HttpError(409, 'drift_changed', 'Storage changed since you reviewed it; reload');
-        // The foreign document goes through the same validator the apps use. Only a VALID document
-        // can be on devices; only then does its publishedAt become a stamping floor.
-        const now = Math.floor(clock() / 1000);
-        if (storage.deviceAcceptable && storage.originPublishedAt > now + MAX_FUTURE_SKEW_SECONDS) {
+        // The foreign document goes through the same validator the apps use. A document that FAILS
+        // validation is rejected by conforming clients, so its publishedAt sets no floor. One that
+        // PASSES could have been accepted by a conforming client (actual device/cache state is
+        // unknown), so its publishedAt becomes the floor. A far-future one is an incident.
+        if (storage.futureIncident) {
           await audit({ event: 'drift_future_timestamp_refused', target: body.target, user: user.email, digest: body.digest, publishedAt: storage.originPublishedAt });
-          throw new HttpError(409, 'drift_future_timestamp', `The Storage document is a valid catalog stamped ${storage.originPublishedAt}, more than ${MAX_FUTURE_SKEW_SECONDS} s in the future. Devices that accepted it will reject every normal publication until then, and superseding it would push the future timestamp forward. This is an incident, not something to acknowledge: see IMPLEMENTATION_PLAN.md §6.`, { storage });
+          throw new HttpError(409, 'drift_future_timestamp', `The Storage document passes catalog validation and is stamped ${storage.originPublishedAt}, more than ${MAX_FUTURE_SKEW_SECONDS} s in the future. A conforming client that accepted it would reject every normally stamped publication until then. This is an incident: publishing stays blocked, nothing is overwritten and no timestamp leap is made. See IMPLEMENTATION_PLAN.md §6.`, { storage });
         }
         await appendFile(paths.driftAcks, JSON.stringify({ target: body.target, digest: body.digest, revision: storage.originRevision,
-          publishedAt: storage.originPublishedAt, deviceAcceptable: storage.deviceAcceptable, validationError: storage.validationError,
+          publishedAt: storage.originPublishedAt, passesValidation: storage.passesValidation, validationError: storage.validationError,
           by: user.email, at: new Date(clock()).toISOString() }) + '\n');
-        await audit({ event: 'drift_acknowledged', target: body.target, user: user.email, digest: body.digest, revision: storage.originRevision, deviceAcceptable: storage.deviceAcceptable });
+        await audit({ event: 'drift_acknowledged', target: body.target, user: user.email, digest: body.digest, revision: storage.originRevision, passesValidation: storage.passesValidation });
         return { acknowledged: true, storage: await inspectStorage(body.target) };
       }));
     }

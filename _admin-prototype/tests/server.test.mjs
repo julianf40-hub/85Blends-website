@@ -247,7 +247,7 @@ test('a writer that bypasses the lock (CLI or dashboard) is detected and blocks 
   assert.equal(ack.status, 200);
   const next = await publish('staging');
   assert.equal(next.status, 200, JSON.stringify(next.data));
-  // devices may already hold the foreign document: the superseding publication must be newer than it
+  // the foreign document passes validation, so a conforming client could have accepted it: supersede with a newer one
   assert.ok(next.data.publishedAt > drift.originPublishedAt);
   assert.equal((await storageOf('staging')).state, 'in_sync');
 });
@@ -278,12 +278,12 @@ test('acknowledging drift never skips validation: an invalid foreign document se
   await call('/api/dev/external-write', { method: 'POST', body: { target: 'staging', kind: 'invalid' } });
   drift = await storageOf('staging');
   assert.equal(drift.state, 'drift');
-  assert.equal(drift.deviceAcceptable, false);
+  assert.equal(drift.passesValidation, false);
   assert.ok(drift.validationError);
   const ack = await call('/api/drift/acknowledge', { method: 'POST', body: { target: 'staging', digest: drift.originDigest } });
   assert.equal(ack.status, 200);
   assert.equal(ack.data.storage.acknowledged, true);
-  // the baseline stays the recorded publication: devices rejected the invalid document
+  // the baseline stays the recorded publication: conforming clients reject a document that fails validation
   assert.equal((await state()).baselines.staging.source, 'recorded');
   // an invalid candidate is still refused after acknowledgement
   await saveDraft((w) => { w.catalog.brands[0].destinationURL = 'http://insecure.example'; });
@@ -313,7 +313,8 @@ test('a valid acknowledged foreign document becomes the review baseline', async 
 test('a far-future foreign timestamp is refused at acknowledgement and publishing stays blocked', async () => {
   await call('/api/dev/external-write', { method: 'POST', body: { target: 'staging', kind: 'future' } });
   const drift = await storageOf('staging');
-  assert.equal(drift.deviceAcceptable, true);
+  assert.equal(drift.passesValidation, true);
+  assert.equal(drift.futureIncident, true);
   assert.ok(drift.originPublishedAt > Math.floor(clockMs / 1000) + 300);
   const ack = await call('/api/drift/acknowledge', { method: 'POST', body: { target: 'staging', digest: drift.originDigest } });
   assert.equal(ack.status, 409);
@@ -321,5 +322,13 @@ test('a far-future foreign timestamp is refused at acknowledgement and publishin
   assert.equal((await storageOf('staging')).acknowledged, false);
   const blocked = await publish('staging');
   assert.equal(blocked.status, 409);
-  assert.equal(blocked.data.error, 'storage_drift');
+  assert.equal(blocked.data.error, 'incident_future_timestamp');
+  // default: block and report; reconcile never overwrites it and nothing leaps forward
+  const reconcile = await call('/api/reconcile', { method: 'POST', body: { target: 'staging' } });
+  assert.equal(reconcile.data.state, 'drift');
+  assert.equal(reconcile.data.futureIncident, true);
+  assert.equal((await storageOf('staging')).originDigest, drift.originDigest);
+  const audit = await readFile(join(stateDir, 'audit.jsonl'), 'utf8');
+  assert.match(audit, /drift_future_timestamp_refused/);
+  assert.match(audit, /incident_future_timestamp_blocked_publish/);
 });

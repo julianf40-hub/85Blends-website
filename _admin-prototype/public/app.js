@@ -511,7 +511,7 @@ function sideChanges() {
       ${isDirty() ? '<span class="pill warn">Includes unsaved edits</span>' : ''}
     </div>
     ${acknowledged
-      ? `<p class="info warn small"><strong>Baseline: the acknowledged Storage document</strong> (revision <code>${e(baseline.document.revision)}</code>, ${e(formatTime(baseline.document.publishedAt))}). It replaced the latest recorded publication without going through the publisher and may be on devices, so the next publication is compared with it.</p>`
+      ? `<p class="info warn small"><strong>Baseline: the acknowledged Storage document</strong> (revision <code>${e(baseline.document.revision)}</code>, ${e(formatTime(baseline.document.publishedAt))}). It replaced the latest recorded publication without going through the publisher and passes catalog validation, so a conforming client could have accepted it (actual device and cache state is unknown). The next publication is compared with it.</p>`
       : `<p class="muted small">Live ${e(target)}: ${live.head ? `revision <code>${e(live.head.revision)}</code>, published ${e(formatTime(live.head.publishedAt))}` : 'nothing published yet'}.</p>`}
     ${diffMarkup(diffCatalogs(acknowledged ? baseline.document : liveDoc(target), candidate()), acknowledged ? { before: 'Before (Storage)', after: 'After (draft)' } : undefined)}`;
 }
@@ -595,11 +595,13 @@ function storageMarkup(target, storage) {
   const label = {
     in_sync: '✓ origin holds the latest recorded publication', empty: 'nothing published yet', repaired: '✓ repaired by reconcile',
     pending: '⚠ latest recorded publication not confirmed in Storage (crash or uncertain upload)',
-    drift: storage.acknowledged ? '⚠ drift acknowledged: the next publication will supersede it' : `✗ DRIFT: ${storage.reason}`,
+    drift: storage.futureIncident ? `✗ INCIDENT: Storage holds a valid catalog stamped ${formatTime(storage.originPublishedAt)} (far future). Publishing is blocked and nothing is changed automatically. Report it (alert delivery is an open deployment decision).`
+      : storage.acknowledged ? `⚠ drift acknowledged (${storage.passesValidation ? 'passes validation; sets the timestamp floor' : 'fails validation; no timestamp floor'}): the next publication will supersede it`
+      : `✗ DRIFT: ${storage.reason} (${storage.passesValidation ? 'passes catalog validation' : 'fails catalog validation'}; device and cache state unknown)`,
   }[storage.state] ?? storage.state;
   const actions = [];
   if (storage.state === 'pending') actions.push(`<button type="button" data-action="reconcile" data-target="${target}">Reconcile now</button>`);
-  if (storage.state === 'drift' && !storage.acknowledged) {
+  if (storage.state === 'drift' && !storage.acknowledged && !storage.futureIncident) {
     actions.push(`<button type="button" data-action="ack-drift" data-target="${target}" data-digest="${e(storage.originDigest)}">Acknowledge drift…</button>`);
   }
   return `<span class="${storage.state === 'drift' && !storage.acknowledged ? 'error-text' : storage.state === 'pending' ? 'warn-text' : ''}">${e(label)}</span> ${actions.join(' ')}`;
@@ -928,7 +930,7 @@ document.addEventListener('click', async (event) => {
     case 'ack-drift':
       openDialog(`<h2 id="dialog-title">Acknowledge Storage drift (${e(el.dataset.target)})</h2>
         <p>${e(S.server.storage[el.dataset.target].reason)}.</p>
-        <p>The server validates the Storage document first. If it is a valid catalog, devices may already hold it: the next publication must be stamped newer than it and is reviewed against it. If it is invalid, devices ignore it and it is simply superseded. A far-future <code>publishedAt</code> is never accepted here: that is an incident (see the plan). Acknowledging does not skip any check on the next publication. Investigate who wrote it before continuing; Reconcile never overwrites drift by itself.</p>
+        <p>The server runs the catalog validator on the Storage document first. If it <strong>passes</strong>, a conforming client could have accepted it, so the next publication must be stamped newer than it and is reviewed against it. If it <strong>fails</strong>, conforming clients reject it, so it sets no timestamp floor. Either way, which devices or caches actually show it is unknown. A far-future <code>publishedAt</code> is never acknowledged: it is an incident and publishing stays blocked. Acknowledging does not skip any check on the next publication. Investigate who wrote it before continuing; Reconcile never overwrites drift by itself.</p>
         <div class="dialog-actions"><button type="button" class="danger" data-action="ack-drift-go" data-target="${e(el.dataset.target)}" data-digest="${e(el.dataset.digest)}">Acknowledge (simulated)</button><button type="button" data-action="dialog-close">Cancel</button></div>`);
       break;
     case 'ack-drift-go':

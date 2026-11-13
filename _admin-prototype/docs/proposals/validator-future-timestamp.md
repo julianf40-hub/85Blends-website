@@ -14,7 +14,7 @@ the admin does not depend on it.
   `docs/remote-gear/README.md` §4, currently the only route to Production) is accepted by
   `validate_catalog.py` with `OK`. Afterwards:
   - the publisher refuses to publish ("live publishedAt … more than 300 s in the future");
-  - devices reject any later document stamped earlier than 2026-11-18 as stale.
+  - conforming clients that accepted it reject any later document stamped earlier than 2026-11-18 as stale.
 
 ## Proposed change
 

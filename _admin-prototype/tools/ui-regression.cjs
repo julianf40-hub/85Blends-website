@@ -8,8 +8,10 @@
 // 2. Retained unsaved edits keep their original base version, so a later save shows the conflict
 //    dialog instead of overwriting another session's save.
 // 3. After drift is acknowledged, server checks and the Changes view compare against the
-//    acknowledged Storage document (what devices may hold), not the latest recorded publication.
+//    acknowledged Storage document (it passes catalog validation, so a conforming client could have
+//    accepted it; actual device/cache state is unknown), not the latest recorded publication.
 // 4. HEIF/HEIC uploads are refused by the browser and the server.
+// 5. A far-future valid catalog in Storage is reported as an incident and blocks publishing.
 // Each check resets the prototype data first. Exit status 1 on any failure.
 
 const { chromium } = require('playwright');
@@ -111,6 +113,22 @@ async function publishStaging(page) {
     const sign = await api(page, '/api/uploads/sign', { brandId: 'northwind-sensors', contentType: 'image/heic', byteLength: 10, sha256: 'a'.repeat(64) });
     const help = await page.textContent('#editor');
     check('4. HEIF/HEIC uploads are refused (server 415; UI says PNG/JPEG only)', sign.status === 415 && /PNG or JPEG/.test(help) && accept === 'present', `server=${sign.status}`);
+    await page.close();
+  }
+
+  // 5. Far-future valid catalog in Storage: incident banner, no acknowledge, publishing blocked ----
+  {
+    const page = await session(browser);
+    await reset(page);
+    await publishStaging(page);
+    await api(page, '/api/dev/external-write', { target: 'staging', kind: 'future' });
+    await page.reload(); await page.waitForSelector('.brand-item');
+    await page.click('[data-action="tab"][data-tab="publish"]');
+    const panel = await page.textContent('.target.staging');
+    const ackButton = await page.$('.target.staging [data-action="ack-drift"]');
+    const publish = await api(page, '/api/publish', { target: 'staging', draftVersion: 1, expectedLiveRevision: null });
+    check('5. far-future valid catalog: incident shown, cannot be acknowledged, publishing blocked',
+      /INCIDENT/.test(panel) && !ackButton && publish.status === 409, `ack button=${!!ackButton}, publish=${publish.status} ${publish.data.error}`);
     await page.close();
   }
 
