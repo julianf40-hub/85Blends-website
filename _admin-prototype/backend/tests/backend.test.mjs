@@ -6,88 +6,15 @@
 // verification), PostgREST/RLS, Storage and the gear-publish Edge Function.
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
-import { execSync } from 'node:child_process';
-import { createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { USERS, LOCAL_TEST_PASSWORD, LOCAL_STEP_UP_SECONDS } from '../tools/make-seed.mjs';
 
-const DIR = new URL('..', import.meta.url).pathname;
-let ENV;
-const sh = (cmd) => execSync(cmd, { cwd: DIR, encoding: 'utf8', env: { ...process.env, SUPABASE_INTERNAL_IMAGE_REGISTRY: 'docker.io' } });
-const sql = (q) => execSync(`psql "${ENV.DB_URL}" -v ON_ERROR_STOP=1 -At`, { input: q, encoding: 'utf8' }).trim();
-const sqlError = (q) => { try { sql(q); return null; } catch (e) { return String(e.stderr || e.message); } };
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-// ---- TOTP (RFC 6238) for the fictional test users ------------------------------------------------
-function base32(secret) {
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-  let bits = '';
-  for (const c of secret.replace(/=+$/, '').toUpperCase()) bits += alphabet.indexOf(c).toString(2).padStart(5, '0');
-  return Buffer.from(bits.match(/.{8}/g).map((b) => parseInt(b, 2)));
-}
-function totp(secret, at = Date.now()) {
-  const counter = Buffer.alloc(8);
-  counter.writeBigUInt64BE(BigInt(Math.floor(at / 1000 / 30)));
-  const h = createHmac('sha1', base32(secret)).update(counter).digest();
-  const o = h[h.length - 1] & 0xf;
-  return String((h.readUInt32BE(o) & 0x7fffffff) % 1_000_000).padStart(6, '0');
-}
-
-// ---- HTTP helpers ------------------------------------------------------------------------------------
-async function http(path, { method = 'GET', token, key = ENV.ANON_KEY, body, headers = {}, raw = false } = {}) {
-  const res = await fetch(`${ENV.API_URL}${path}`, {
-    method, body: body === undefined ? undefined : raw ? body : JSON.stringify(body),
-    headers: { apikey: key, ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(body !== undefined && !raw ? { 'Content-Type': 'application/json' } : {}), ...headers },
-  });
-  const text = await res.text();
-  let data = text;
-  try { data = text ? JSON.parse(text) : null; } catch { /* keep text */ }
-  return { status: res.status, data };
-}
-const sessions = {};
-const factors = {};
-async function signIn(who) {
-  const r = await http('/auth/v1/token?grant_type=password', { method: 'POST', body: { email: USERS[who].email, password: LOCAL_TEST_PASSWORD } });
-  assert.equal(r.status, 200, JSON.stringify(r.data));
-  return r.data.access_token;
-}
-async function mfa(who) {
-  const aal1 = await signIn(who);
-  if (!factors[who]) {
-    const enrolled = await http('/auth/v1/factors', { method: 'POST', token: aal1, body: { factor_type: 'totp', friendly_name: `${who}-local` } });
-    assert.equal(enrolled.status, 200, JSON.stringify(enrolled.data));
-    factors[who] = { id: enrolled.data.id, secret: enrolled.data.totp.secret };
-  }
-  const { id, secret } = factors[who];
-  const challenge = await http(`/auth/v1/factors/${id}/challenge`, { method: 'POST', token: aal1, body: {} });
-  assert.equal(challenge.status, 200, JSON.stringify(challenge.data));
-  const verify = await http(`/auth/v1/factors/${id}/verify`, { method: 'POST', token: aal1, body: { challenge_id: challenge.data.id, code: totp(secret) } });
-  assert.equal(verify.status, 200, JSON.stringify(verify.data));
-  return verify.data.access_token;
-}
-const claims = (jwt) => JSON.parse(Buffer.from(jwt.split('.')[1], 'base64url').toString());
-const fn = (token, body, headers = {}) => http('/functions/v1/gear-publish', { method: 'POST', token, body, headers });
-const draftRow = () => JSON.parse(sql(`select row_to_json(d) from public.gear_catalog_drafts d`));
-const head = (target) => JSON.parse(sql(`select row_to_json(h) from public.gear_publication_head h where target = '${target}'`));
-const objectPath = (t) => (t === 'staging' ? 'staging/catalog-v1.json' : 'catalog-v1.json');
-const publicRead = (t) => http(`/storage/v1/object/public/recommended-gear/${objectPath(t)}?t=${Date.now()}`);
-const serviceWrite = (t, text) => http(`/storage/v1/object/recommended-gear/${objectPath(t)}`, { method: 'POST', key: ENV.SERVICE_ROLE_KEY, token: ENV.SERVICE_ROLE_KEY, body: text, raw: true, headers: { 'Content-Type': 'application/json', 'x-upsert': 'true' } });
-async function publish(token, target, extra = {}, headers = {}) {
-  return fn(token, { action: 'publish', target, draftVersion: draftRow().version, expectedLiveRevision: head(target).revision, confirmation: target === 'production' ? 'PUBLISH PRODUCTION' : undefined, ...extra }, headers);
-}
-async function saveDraft(token, mutate) {
-  const d = draftRow();
-  const catalog = structuredClone(d.catalog);
-  const meta = structuredClone(d.meta);
-  mutate?.(catalog, meta);
-  return http('/rest/v1/rpc/save_gear_draft', { method: 'POST', token, body: { expected_version: d.version, new_catalog: catalog, new_meta: meta } });
-}
+import { review, grantFor, latestDocument, latestPublicationId, DIR, ENV, base32, claims, directWrite, draftRow, factors, fn, head, http, mfa, objectPath, publicRead, publish, resetLocalDatabase, saveDraft, serviceWrite, sessions, sh, signIn, sleep, sql, sqlError, svc, totp } from './helpers.mjs';
 
 let publisher; // aal2 session of the pinned publisher
 
 before(async () => {
-  ENV = JSON.parse(sh('supabase status -o json'));
-  sh('supabase db reset');
+  resetLocalDatabase();
   await sleep(3000); // let PostgREST reload its schema cache after the reset
   publisher = await mfa('publisher');
 });
@@ -156,16 +83,20 @@ test('save_gear_draft: aal2 admins only, optimistic version lock, server-stamped
 });
 
 // ---------------------------------------------------------------- database guarantees
-test('DB: one publisher only; publications require the publisher, aal2, a matching digest, increasing publishedAt; append-only', () => {
+test('DB: one publisher only; publications require the publisher, aal2, a matching digest, JSON matching the row, increasing publishedAt; append-only', () => {
   assert.match(sqlError(`insert into public.gear_admins (user_id, role) values ('${USERS.spare.id}', 'publisher')`), /gear_admins_single_publisher/);
-  const row = (by, aal, digestExpr, at) => `insert into public.gear_catalog_publications (target, revision, published_at, document, digest, summary, validator_version, published_by, auth_aal)
-    values ('staging', gen_random_uuid(), ${at}, '{}', ${digestExpr}, 't', 't', '${by}', '${aal}')`;
-  const good = `encode(sha256(convert_to('{}', 'UTF8')), 'hex')`;
-  assert.match(sqlError(row(USERS.editor.id, 'aal2', good, 1)), /authored by the publisher/);
-  assert.match(sqlError(row(USERS.publisher.id, 'aal1', good, 1)), /aal2/);
-  assert.match(sqlError(row(USERS.publisher.id, 'aal2', `'00'`, 1)), /digest/);
-  sql(row(USERS.publisher.id, 'aal2', good, 1000));
-  assert.match(sqlError(row(USERS.publisher.id, 'aal2', good, 1000)), /strictly increase/);
+  // a document that matches its row: schemaVersion 1, revision, publishedAt, brands array
+  const docFor = (rev, at) => JSON.stringify({ schemaVersion: 1, revision: rev, publishedAt: at, brands: [] });
+  const row = (by, aal, at, { rev = crypto.randomUUID(), doc = docFor(rev, at), digest } = {}) => `insert into public.gear_catalog_publications (target, revision, published_at, document, digest, summary, validator_version, published_by, auth_aal)
+    values ('staging', '${rev}', ${at}, '${doc}', ${digest ?? `encode(sha256(convert_to('${doc}', 'UTF8')), 'hex')`}, 't', 't', '${by}', '${aal}')`;
+  assert.match(sqlError(row(USERS.editor.id, 'aal2', 1)), /authored by the publisher/);
+  assert.match(sqlError(row(USERS.publisher.id, 'aal1', 1)), /aal2/);
+  assert.match(sqlError(row(USERS.publisher.id, 'aal2', 1, { digest: `'00'` })), /digest/);
+  assert.match(sqlError(row(USERS.publisher.id, 'aal2', 1, { doc: '{}' })), /does not match the publication row/);
+  assert.match(sqlError(row(USERS.publisher.id, 'aal2', 1, { doc: docFor(crypto.randomUUID(), 1) })), /does not match the publication row/); // revision mismatch
+  assert.match(sqlError(row(USERS.publisher.id, 'aal2', 1, { doc: 'not json' })), /not JSON/);
+  sql(row(USERS.publisher.id, 'aal2', 1000));
+  assert.match(sqlError(row(USERS.publisher.id, 'aal2', 1000)), /strictly increase/);
   assert.match(sqlError(`update public.gear_catalog_publications set summary = 'x'`), /append-only/);
   assert.match(sqlError(`delete from public.gear_catalog_publications`), /append-only/);
   // remove the probe row for the rest of the suite (superuser maintenance path, trigger disabled explicitly)
@@ -174,36 +105,7 @@ test('DB: one publisher only; publications require the publisher, aal2, a matchi
 });
 
 // ---------------------------------------------------------------- Storage writes
-const svc = (fnName, body) => http(`/rest/v1/rpc/${fnName}`, { method: 'POST', key: ENV.SERVICE_ROLE_KEY, token: ENV.SERVICE_ROLE_KEY, body });
-const directWrite = (target, token, leaseToken, text) => http(`/storage/v1/object/recommended-gear/${objectPath(target)}`, {
-  method: 'POST', token, body: text, raw: true,
-  headers: { 'Content-Type': 'application/json', 'x-upsert': 'true', ...(leaseToken ? { 'x-metadata': Buffer.from(JSON.stringify({ gear_lease: leaseToken })).toString('base64') } : {}) },
-});
-
-test('Storage RLS: catalog writes need the aal2 publisher JWT, the live lease token and an unchanged object version', async () => {
-  const body = JSON.stringify({ schemaVersion: 1, revision: 'direct', publishedAt: 1, brands: [] });
-  assert.ok((await directWrite('staging', undefined, null, body)).status >= 400, 'anon');
-  assert.ok((await directWrite('staging', publisher, null, body)).status >= 400, 'publisher without a lease token');
-  assert.ok((await directWrite('staging', publisher, '00000000-0000-4000-8000-000000000000', body)).status >= 400, 'forged token');
-  const lease = (await svc('gear_acquire_lease', { p_target: 'staging', p_ttl_seconds: 30 })).data;
-  try {
-    assert.ok((await directWrite('staging', publisher, lease, body)).status >= 400, 'no prepared expectation yet');
-    await svc('gear_prepare_write', { p_token: lease, p_target: 'staging' });
-    assert.ok((await directWrite('staging', await signIn('publisher'), lease, body)).status >= 400, 'aal1 session with a valid token');
-    assert.ok((await directWrite('staging', await mfa('editor'), lease, body)).status >= 400, 'aal2 editor with a valid token');
-    assert.equal((await directWrite('staging', publisher, lease, body)).status, 200, 'aal2 publisher + live token + prepared version');
-    // compare-and-swap: the version changed, so a second write without re-preparing is refused
-    assert.ok((await directWrite('staging', publisher, lease, body.replace('direct', 'direct-2'))).status >= 400, 'CAS');
-    assert.equal((await publicRead('staging')).data.revision, 'direct');
-  } finally {
-    await svc('gear_release_lease', { p_target: 'staging', p_token: lease });
-  }
-  // a released (stale) token is refused even with a prepared expectation
-  assert.ok((await directWrite('staging', publisher, lease, body)).status >= 400, 'released token');
-  // clean slate for the publishing tests: delete the direct object through the Storage API (direct SQL deletes are blocked)
-  const del = await http('/storage/v1/object/recommended-gear/staging/catalog-v1.json', { method: 'DELETE', key: ENV.SERVICE_ROLE_KEY, token: ENV.SERVICE_ROLE_KEY });
-  assert.equal(del.status, 200, JSON.stringify(del.data));
-});
+// Storage RLS write checks live in tests/bypass.test.mjs (they need a recorded publication to authorize).
 
 // ---------------------------------------------------------------- function authorization
 test('gear-publish: editor, aal1, outsider and signed-out sessions are refused', async () => {
@@ -286,7 +188,7 @@ test('crash after commit: recorded but not uploaded; lease held until expiry; re
   assert.equal(crashed.status, 500);
   assert.equal((await fn(publisher, { action: 'inspect', target: 'staging' })).data.state, 'pending');
   assert.equal((await fn(publisher, { action: 'reconcile', target: 'staging' })).data.error, 'lease_held');
-  await sleep(5000); // GEAR_LEASE_SECONDS = 4 locally
+  await sleep(7000); // GEAR_LEASE_SECONDS = 6 locally
   const fixed = await fn(publisher, { action: 'reconcile', target: 'staging' });
   assert.equal(fixed.data.state, 'repaired', JSON.stringify(fixed.data));
   const doc = sql(`select document from public.gear_catalog_publications where revision = '${crashed.data.revision}'`);
@@ -355,7 +257,8 @@ test('rollback (production) is a new publication with a new revision and a newer
   publisher = await mfa('publisher');
   const [first] = JSON.parse(sql(`select json_agg(row_to_json(p) order by published_at) from (select id, revision, published_at from public.gear_catalog_publications where target = 'production') p`));
   const before = head('production');
-  const r = await fn(publisher, { action: 'rollback', target: 'production', publicationId: first.id, expectedLiveRevision: before.revision, confirmation: 'PUBLISH PRODUCTION' });
+  const reviewed = await fn(publisher, { action: 'review', target: 'production', rollbackOf: first.id });
+  const r = await fn(publisher, { action: 'rollback', target: 'production', publicationId: first.id, expectedLiveRevision: before.revision, confirmation: 'PUBLISH PRODUCTION', reviewDigest: reviewed.data.reviewDigest });
   assert.equal(r.status, 200, JSON.stringify(r.data));
   assert.notEqual(r.data.revision, first.revision);
   assert.ok(r.data.publishedAt > before.published_at);
@@ -398,13 +301,13 @@ test('Production step-up: rejected after the TOTP window expires, also by Storag
   const viaFunction = await publish(session.access_token, 'production');
   assert.equal(viaFunction.data.error, 'mfa_step_up_required', JSON.stringify(viaFunction.data));
   // 2. Storage RLS refuses independently, even with a live lease token and a prepared version
-  const lease = (await svc('gear_acquire_lease', { p_target: 'production', p_ttl_seconds: 30 })).data;
+  // every other condition is met (live lease, prepared version, write grant, exact recorded bytes)
+  const grant = await grantFor('production');
   try {
-    await svc('gear_prepare_write', { p_token: lease, p_target: 'production' });
-    const direct = await directWrite('production', session.access_token, lease, '{}');
+    const direct = await directWrite('production', session.access_token, grant.nonce, latestDocument('production'));
     assert.ok(direct.status >= 400, `stale TOTP direct write: ${direct.status}`);
   } finally {
-    await svc('gear_release_lease', { p_target: 'production', p_token: lease });
+    await grant.release();
   }
   // 3. refreshing the session keeps the old TOTP time
   const refreshed = await http('/auth/v1/token?grant_type=refresh_token', { method: 'POST', body: { refresh_token: session.refresh_token } });
@@ -421,18 +324,19 @@ test('Production step-up: rejected after the TOTP window expires, also by Storag
   publisher = reverified.data.access_token;
 });
 
-test('stale publisher A (paused after its DB commit) cannot overwrite B or finalize state after its lease expired', async () => {
+test('stale publisher A (holding an issued write grant, paused before uploading) cannot overwrite B or finalize state', async () => {
   publisher = await mfa('publisher');
   await saveDraft(publisher, (c) => { c.brands[0].priceText = 'From $101'; });
   const startHead = head('staging');
   // A records its publication, then stalls for 8 s before uploading (lease is 4 s locally)
-  const aPromise = publish(publisher, 'staging', {}, { 'x-gear-test-fault': 'pause_after_commit:8000' });
+  const aPromise = publish(publisher, 'staging', {}, { 'x-gear-test-fault': 'pause_before_upload:10000' });
   const committedBy = Date.now() + 3000;
   while (head('staging').revision === startHead.revision && Date.now() < committedBy) await sleep(100);
   const aRevision = head('staging').revision;
   assert.notEqual(aRevision, startHead.revision, 'A has committed');
-  await sleep(4500); // A's lease (4 s) has expired; A is still paused
-  const b = await fn(publisher, { action: 'publish', target: 'staging', draftVersion: draftRow().version, expectedLiveRevision: aRevision });
+  await sleep(6500); // A's lease (6 s) has expired; A is still paused
+  assert.equal(head('staging').revision, aRevision);
+  const b = await publish(publisher, 'staging');
   assert.equal(b.status, 200, JSON.stringify(b.data));
   assert.equal(b.data.storage, 'verified');
   const a = await aPromise;
@@ -450,8 +354,8 @@ test('stale publisher A (paused after its DB commit) cannot overwrite B or final
 test('stale publisher A (paused before recording) cannot record after B took the lease', async () => {
   const startHead = head('staging');
   await saveDraft(publisher, (c) => { c.brands[0].priceText = 'From $102'; });
-  const aPromise = publish(publisher, 'staging', {}, { 'x-gear-test-fault': 'pause_before_record:7000' });
-  await sleep(5500); // A holds a lease it has not used; it expires
+  const aPromise = publish(publisher, 'staging', {}, { 'x-gear-test-fault': 'pause_before_record:9000' });
+  await sleep(7500); // A holds a lease it has not used; it expires
   const b = await publish(publisher, 'staging');
   assert.equal(b.status, 200, JSON.stringify(b.data));
   const a = await aPromise;
@@ -466,7 +370,7 @@ test('reconcile reads first and never overwrites content that changed after it r
   const r = await publish(publisher, 'staging', {}, { 'x-gear-test-fault': 'upload_timeout' }); // recorded, not stored
   assert.equal(r.data.storage, 'uncertain');
   // reconcile decides to re-send, then pauses; meanwhile a bypass writer replaces the object
-  const recon = fn(publisher, { action: 'reconcile', target: 'staging' }, { 'x-gear-test-fault': 'pause_before_resend:2500' });
+  const recon = fn(publisher, { action: 'reconcile', target: 'staging' }, { 'x-gear-test-fault': 'pause_before_resend:2000' });
   await sleep(800);
   const current = (await publicRead('staging')).data;
   const intruder = { ...current, revision: `intruder-${Date.now()}` };
@@ -491,4 +395,26 @@ test('reconcile after a lost response reads back and does not write when Storage
   assert.equal(result.state, 'repaired');
   assert.equal(sql(`select version from storage.objects where bucket_id = 'recommended-gear' and name = 'staging/catalog-v1.json'`), versionBefore, 'no new write');
   assert.equal(sql(`select status from public.gear_publication_status s join public.gear_catalog_publications p on p.id = s.publication_id where p.revision = '${r.data.revision}' order by s.id desc limit 1`), 'verified');
+});
+
+test('a stale publisher without the test override stops itself: it never starts an upload it cannot finish in its lease', async () => {
+  publisher = await mfa('publisher');
+  await saveDraft(publisher, (c) => { c.brands[0].priceText = 'From $105'; });
+  const before = (await publicRead('staging')).data.revision;
+  const r = await publish(publisher, 'staging', {}, { 'x-gear-test-fault': 'pause_after_commit:7000' });
+  assert.equal(r.data.error, 'lease_expiring', JSON.stringify(r.data));
+  assert.equal((await publicRead('staging')).data.revision, before); // nothing uploaded
+  assert.equal((await fn(publisher, { action: 'reconcile', target: 'staging' })).data.state, 'repaired'); // recorded bytes re-sent under a fresh lease
+});
+
+test('stale publisher A paused after its commit, before asking for a grant, is refused by the database (lease_lost)', async () => {
+  publisher = await mfa('publisher');
+  await saveDraft(publisher, (c) => { c.brands[0].priceText = 'From $106'; });
+  const aPromise = publish(publisher, 'staging', {}, { 'x-gear-test-fault': 'pause_after_commit:8000,skip_lease_margin_check' });
+  await sleep(7000);
+  const b = await fn(publisher, { action: 'reconcile', target: 'staging' }); // B re-sends A's recorded bytes under its own lease
+  assert.equal(b.data.state, 'repaired', JSON.stringify(b.data));
+  const a = await aPromise;
+  assert.equal(a.data.error, 'lease_lost', JSON.stringify(a.data));
+  assert.equal((await fn(publisher, { action: 'inspect', target: 'staging' })).data.state, 'in_sync');
 });

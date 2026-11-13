@@ -387,7 +387,12 @@ deno_version = 2
 # GEAR_ALLOW_TEST_FAULTS must never be set (the function also refuses it for non-local URLs).
 [edge_runtime.secrets]
 GEAR_PUBLISHER_USER_ID = "00000000-0000-4000-8000-0000000000a1"
-GEAR_LEASE_SECONDS = "4"
+GEAR_LEASE_SECONDS = "6"
+GEAR_UPLOAD_TIMEOUT_SECONDS = "2"
+# Canonical https prefix catalogs use for gear images (fictional locally; hosted: the project's public bucket URL).
+GEAR_IMAGE_PUBLIC_BASE = "https://storage.example.invalid/recommended-gear/images/"
+# The local admin page (tools: node ../server.mjs --backend=local-supabase).
+GEAR_ALLOWED_ORIGINS = "http://127.0.0.1:4174,http://localhost:4174"
 # Short locally so the expiry test runs quickly; production uses 900 (15 minutes).
 GEAR_PRODUCTION_STEP_UP_SECONDS = "40"
 # New-style local secret key, injected at start by tools/start-local.sh (never committed).
