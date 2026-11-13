@@ -260,3 +260,11 @@ legend { font-weight: 700; padding: 0 6px; }
   .topbar-account, .account-select { width: 100%; }
   .topbar-account select { min-width: 0; width: 100%; }
 }
+
+/* local-supabase mode: visually distinct from the simulated (amber) banner */
+.sim-banner.local-supabase { background: repeating-linear-gradient(-45deg, #00303a, #00303a 12px, #003e4a 12px, #003e4a 24px); color: #a3f0ff; }
+.sim-tag.local { background: #a3f0ff; color: #00303a; }
+.signin-form { display: grid; gap: 10px; max-width: 360px; margin: 12px 0; }
+.signin-form label { display: grid; gap: 4px; }
+.account-who { font-size: 13px; }
+.break { word-break: break-all; }

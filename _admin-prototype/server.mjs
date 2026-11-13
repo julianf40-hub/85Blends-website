@@ -61,7 +61,11 @@ class HttpError extends Error {
   }
 }
 
-export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock = () => Date.now() } = {}) {
+// backend: null (simulated, the default) or { mode: 'local-supabase', supabaseUrl, publishableKey }.
+// In local-supabase mode this server only serves static files and public config: the page talks to the
+// LOCAL Supabase stack directly with the signed-in user's session, and every /api route is disabled.
+export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock = () => Date.now(), backend = null } = {}) {
+  const csp = cspFor(backend);
   const paths = {
     draft: join(stateDir, 'draft.json'),
     heads: join(stateDir, 'heads.json'),
@@ -611,7 +615,7 @@ export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock
   }
 
   async function handle(req, res) {
-    setSecurityHeaders(res);
+    setSecurityHeaders(res, csp);
     // The server binds to 127.0.0.1 only. A DNS-rebinding page would still reach it under its own
     // hostname, with matching Origin and Host headers, so accept loopback Host names only.
     if (!/^(127\.0\.0\.1|localhost)(:\d{1,5})?$/.test(String(req.headers.host ?? ''))) {
@@ -619,7 +623,15 @@ export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock
     }
     const url = new URL(req.url, `http://${req.headers.host ?? '127.0.0.1'}`);
     try {
-      if (url.pathname.startsWith('/api/')) return await api(req, res, url);
+      if (url.pathname === '/config.json') {
+        return send(res, 200, backend
+          ? { mode: 'local-supabase', supabaseUrl: backend.supabaseUrl, publishableKey: backend.publishableKey, productionConfirmation: PRODUCTION_CONFIRMATION }
+          : { mode: 'simulated', productionConfirmation: PRODUCTION_CONFIRMATION });
+      }
+      if (url.pathname.startsWith('/api/')) {
+        if (backend) throw new HttpError(404, 'simulation_disabled', 'The simulated API is disabled in local-supabase mode');
+        return await api(req, res, url);
+      }
       if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'method', 'Method not allowed');
       return await serveStatic(req, res, url);
     } catch (error) {
@@ -648,8 +660,24 @@ function sanitizeMeta(meta) {
   return { approvals, notes };
 }
 
-function setSecurityHeaders(res) {
-  res.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+/** Validates the local-supabase backend config: loopback URL and a publishable (never secret) key. */
+export function localSupabaseBackend({ supabaseUrl, publishableKey }) {
+  const url = new URL(String(supabaseUrl ?? ''));
+  if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost'].includes(url.hostname) || url.pathname !== '/') {
+    throw new Error('local-supabase mode accepts only a loopback http://127.0.0.1:<port> Supabase URL');
+  }
+  const key = String(publishableKey ?? '');
+  if (!/^sb_publishable_[A-Za-z0-9_-]+$/.test(key)) throw new Error('GEAR_SUPABASE_PUBLISHABLE_KEY must be a publishable key (sb_publishable_…); secret keys never go to the browser');
+  return { mode: 'local-supabase', supabaseUrl: url.origin, publishableKey: key };
+}
+
+function cspFor(backend) {
+  const extra = backend ? ` ${backend.supabaseUrl}` : '';
+  return `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:${extra}; connect-src 'self'${extra}; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`;
+}
+
+function setSecurityHeaders(res, csp = cspFor(null)) {
+  res.setHeader('Content-Security-Policy', csp);
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('X-Frame-Options', 'DENY');
@@ -728,10 +756,15 @@ export function inspectImage(bytes) {
 // ---- entry point ----------------------------------------------------------------------------
 if (process.argv[1] && fileURLToPath(import.meta.url) === normalize(process.argv[1])) {
   const port = Number(process.env.PORT ?? 4174);
-  const { server, initialize } = createAdminServer();
-  await initialize({ force: process.argv.includes('--reset') });
+  const backend = process.argv.includes('--backend=local-supabase')
+    ? localSupabaseBackend({ supabaseUrl: process.env.GEAR_SUPABASE_URL, publishableKey: process.env.GEAR_SUPABASE_PUBLISHABLE_KEY })
+    : null;
+  const { server, initialize } = createAdminServer({ backend });
+  if (!backend) await initialize({ force: process.argv.includes('--reset') });
   server.listen(port, '127.0.0.1', () => {
     console.log(`85Blends Admin prototype (Recommended Gear): http://127.0.0.1:${port}`);
-    console.log('Local simulation only: fictional data, no network calls, publishing writes _admin-prototype/.local-state/.');
+    console.log(backend
+      ? `LOCAL SUPABASE mode: real local sign-in and TOTP against ${backend.supabaseUrl} (local stack, fictional data). Simulated API disabled.`
+      : 'Local simulation only: fictional data, no network calls, publishing writes _admin-prototype/.local-state/.');
   });
 }

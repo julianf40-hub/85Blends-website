@@ -148,7 +148,7 @@ Implemented and tested in the local backend (`_admin-prototype/backend/` on bran
 | Guarantee | Verified independently by the database? | How |
 |---|---|---|
 | Reading admin data and saving drafts requires `aal2` | **Yes** | PostgREST verifies the JWT signature; RLS and `save_gear_draft` read `aal` from `auth.jwt()` |
-| A catalog object in Storage can only be written by the publisher with `aal2` | **Yes** | The Storage API verifies the caller's JWT; the `storage.objects` RLS policy calls `private.gear_role()` at commit |
+| A catalog object in Storage can only be written by the publisher with `aal2` | **Yes** | The Storage API verifies the caller's JWT; the `storage.objects` RLS policy calls `private.gear_role()` in Storage's pre-upload permission check (a rolled-back dry run, see §6), plus a single-use write grant bound to that user |
 | Production object writes need a TOTP verification within the step-up window | **Yes** | The same policy checks the `amr` TOTP timestamp against `gear_settings.production_step_up_seconds` |
 | The session has not been revoked or signed out | **No** (function only) | PostgREST and Storage check the signature and expiry, not session revocation. Only the function's Auth check sees a sign-out, so a revoked token stays valid at the database until it expires (keep JWT expiry short) |
 | The caller is the pinned publisher ID | **Partly** | The function checks the pinned ID. The database independently allows only one publisher row and checks that role |
@@ -197,15 +197,42 @@ The implemented design:
    expires. Every database write (record, status, acknowledgement) must present the live token.
 2. **Capture the object version first** (`gear_prepare_write`), then read the authenticated
    origin (never the CDN) and classify it.
-3. **Storage enforces fencing and compare-and-swap.** The function uploads with the **publisher's
-   own verified JWT**, not a service key, and puts the lease token in the object's user metadata.
-   `storage.objects` RLS, evaluated when Storage commits the object row, requires:
+3. **Storage enforces fencing and compare-and-swap when an upload starts.** The function uploads
+   with the **publisher's own verified JWT**, not a service key. Under the lease it issues a
+   **single-use write grant** (`private.gear_write_grants`) bound to the target, the object path,
+   the prepared publication, the publisher's user ID and the declared byte size, and puts only the
+   grant's nonce in the object's user metadata. The lease token itself is never readable by
+   clients (column grants hide it). `storage.objects` RLS requires:
    - publisher plus `aal2`;
-   - the live, unexpired lease token;
+   - a live grant for this exact path, issued to this user, with the declared `contentLength`
+     equal to the granted size, under the live, unexpired lease;
    - for an update, the existing object version equal to the version captured in step 2;
    - for Production, a recent TOTP.
 
-   A rejected upload leaves the served object unchanged.
+   The grant is consumed after every attempt. A rejected upload leaves the served object unchanged.
+
+   **Correction (bypass review at `f7d2a3c`):** an earlier version of this plan said RLS is
+   "evaluated when Storage commits the object row". It is not. The Storage API (`storage-api`
+   v1.72.1 locally) runs RLS in `canUpload()` as a **rolled-back dry run before the bytes arrive**,
+   seeing only the declared metadata (`mimetype`, `contentLength`); the final row is then written
+   as a superuser without RLS. So:
+   - **RLS cannot bind content.** It binds who, where, when, which lease/publication and the
+     declared size, not the bytes;
+   - the fencing and compare-and-swap checks are **check-then-act**: they hold when an upload
+     starts. The function refuses to start an upload unless the lease outlives the upload timeout
+     plus a margin, which bounds the window; detection (read-back, inspect, the verifier) covers
+     the rest.
+
+   Also found at `f7d2a3c` and fixed: the publisher could read `lease_token` over REST and upload
+   arbitrary bytes directly. Now the token is hidden, writes need a grant, and expired, released,
+   replayed, cross-environment, cross-path, wrong-size, wrong-user and role-changed grants are
+   refused (backend `tests/bypass.test.mjs`, B1–B9).
+
+   **Still enforced only by the function** (a caller with a live, unspent grant could upload
+   different bytes of the same size; this is pinned by test B9 and is detected as drift):
+   full v1 validation, the successor and ordering checks, partner approvals, image checks,
+   byte-equality with the recorded publication, the Production confirmation and review digest,
+   and session revocation.
 4. **Stamp** `max(now, head + 1, floor)` with a ±300 s guard. **Record** history with status
    `recorded`. **Upload, read back**, and record `verified`, `uncertain` or `conflict`.
 5. **Reconcile** reads first and makes at most one re-send per call (no retry loop). It re-sends
@@ -281,7 +308,18 @@ complete prevention against privileged writers is signed catalogs, an app change
 - **Drafts:** version lock. Edits typed during a save are kept, and retained edits keep their
   original base (review fixes).
 - **History:** append-only exact bytes, a separate status log, and rollback as a new publication.
-- **Images:** content-addressed, `upsert: false`, PNG/JPEG only.
+- **Images (implemented locally):** `gear-publish?action=upload_image` sniffs the type from the
+  bytes (PNG/JPEG only; HEIF/HEIC refused even when mislabelled), reads dimensions from the header
+  (≤ 8,192 px per side, ≤ 40 MP, ≤ 5 MB), names the object `images/<brand>/<sha256>.<png|jpg>`,
+  and uploads with the caller's JWT and a single-use image grant. Storage RLS allows **insert only**
+  (no overwrite, no delete policy). The function reads the object back and checks its hash.
+- **Verifier (implemented locally, on demand; not scheduled):** read-only. It reports drift,
+  incidents, pending/refused/uncertain statuses, expired leases, missing images and unreferenced
+  images (`deleted: false`), and writes one audit entry. **Nothing is deleted automatically**
+  (D9). Alert delivery stays unresolved (D1); scheduling waits for the hosted tier.
+- **Review binding:** `review` returns a digest of target, draft version or rollback source,
+  baseline bytes, candidate brands and (Production) approvals. Publish recomputes it under the
+  lease and refuses `review_stale` on any difference.
 
 ## 8. Future-dated seed; proposed validator warning (separate change)
 
@@ -385,9 +423,10 @@ Edge Runtime locally. The repository has already replayed its migrations this wa
 local-only config.
 
 **Status:** the local backend exists on branch `claude/admin-backend-local`, with fictional data
-and 28 integration tests passing against a local stack (see its README). Not yet implemented
-locally: image uploads, the scheduled verifier, wiring the UI to the backend, and magic-link
-sign-in.
+and 47 integration tests passing against a local stack, plus a 15-step browser run of the admin UI
+in local-supabase mode (see its README). Implemented locally: Storage write grants, review
+binding, validated image uploads, the on-demand verifier, and the UI with real local sign-in and
+TOTP. Not implemented: magic-link sign-in, scheduling the verifier, and image retention (D9).
 
 **Checks that local covers:**
 - migration replay; RLS; the single-publisher index and publication trigger;
@@ -412,6 +451,10 @@ sign-in.
   `x-metadata` in `user_metadata`, and `amr` in policies;
 - magic-link email delivery;
 - scheduled verifier execution (cron);
+- CORS on hosted functions (locally the gateway answers preflight itself; the function's own
+  Origin check is what the tests rely on);
+- the Storage API's dry-run RLS and `x-metadata` behavior on the hosted version, and S3 multipart
+  or resumable uploads (TUS), which take a different code path from the standard upload;
 - an iOS TestFlight build reading a staging object over the real network.
 
 **Options for that hosted environment, cheapest first:**
@@ -426,9 +469,18 @@ Exit criteria for B: everything above passes, including the alias/Access verific
 the frontend is hosted in this tier. Each hosted environment, credential or integration created
 here needs Julian's go-ahead.
 
+### Credential remediation: an independent workstream (not gated on the admin or the website)
+
+Credential remediation is tracked **separately** from this admin work. It does not wait for the
+admin, the backend staging tier or the website to be ready: it proceeds on its own schedule now.
+The only coupling is one-way: **verified revocation must be complete before any live admin
+publishing** (tier C, item 1). Nothing in tiers A or B depends on it, and nothing in those tiers
+creates, changes or uses a live credential.
+
 ### C. Production launch (any write to the live project, including `staging/`)
 
-1. **Credential remediation completed and revocation verified**, not merely the migration PRs
+1. **Credential remediation completed and revocation verified** (the independent workstream
+   above; required before live admin publishing, not deferred until then), not merely the migration PRs
    merged:
    - the remediation steps of the credential plan are done;
    - every superseded or exposed key is revoked, or the legacy JWT keys are disabled where planned;
@@ -476,6 +528,19 @@ here needs Julian's go-ahead.
 | D9 | Retention of unreferenced images | e.g. report after 30 days, delete manually | Before image uploads ship |
 
 ## 14. Verification in this session
+
+### Backend branch (local stack, fictional data)
+
+- `node --test --test-concurrency=1 _admin-prototype/backend/tests/*.test.mjs`: **47 / 47**
+  (backend, bypass B1–B9, review binding, origin, images, verifier).
+- `node _admin-prototype/backend/tools/ui-local-supabase.mjs`: **15 / 15** browser checks:
+  sign-in + TOTP enrollment, wrong code, outsider refused, simulated API disabled, draft conflict,
+  draft-version and review-digest binding, Staging publish, Production step-up expiry and fresh
+  code, reconcile of an uncertain upload, rollback, image upload with HEIF refused (browser and
+  server), verifier, near-expiry refresh, global sign-out elsewhere, sign-out.
+- Simulated mode unchanged: `tools/ui-regression.cjs` 6 / 6; `tests/*.test.mjs` 56 pass.
+
+### Prototype PR
 
 - `node --test _admin-prototype/tests/*.test.mjs`: **54 pass**.
 - `node _admin-prototype/tools/ui-regression.cjs`: 6 / 6.
