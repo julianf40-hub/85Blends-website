@@ -12,6 +12,7 @@
 //    accepted it; actual device/cache state is unknown), not the latest recorded publication.
 // 4. HEIF/HEIC uploads are refused by the browser and the server.
 // 5. A far-future valid catalog in Storage is reported as an incident and blocks publishing.
+// 6. A background poll during an in-flight save raises no spurious remote-change notice.
 // Each check resets the prototype data first. Exit status 1 on any failure.
 
 const { chromium } = require('playwright');
@@ -129,6 +130,24 @@ async function publishStaging(page) {
     const publish = await api(page, '/api/publish', { target: 'staging', draftVersion: 1, expectedLiveRevision: null });
     check('5. far-future valid catalog: incident shown, cannot be acknowledged, publishing blocked',
       /INCIDENT/.test(panel) && !ackButton && publish.status === 409, `ack button=${!!ackButton}, publish=${publish.status} ${publish.data.error}`);
+    await page.close();
+  }
+
+  // 6. A background poll during an in-flight save does not raise a "someone else saved" notice --
+  {
+    const page = await session(browser);
+    await reset(page);
+    await page.fill('[data-bind="priceText"]', 'From $6');
+    // The server commits the save at once; only the RESPONSE is held back, so the poll sees the new version.
+    await page.route('**/api/draft', async (route) => { const response = await route.fetch(); await new Promise((r) => setTimeout(r, 14000)); await route.fulfill({ response }); });
+    await page.click('[data-action="save"]');
+    await page.waitForTimeout(12000); // the 10 s poll has fired; the save response is still held
+    const duringSave = await page.isVisible('#remote-notice');
+    await page.fill('[data-bind="tagline"]', 'Typed during the slow save'); // exercises the kept-edits path
+    await page.waitForTimeout(3500);
+    await page.unroute('**/api/draft');
+    const afterSave = await page.isVisible('#remote-notice');
+    check('6. a poll during an in-flight save raises no remote-change notice (during or after)', !duringSave && !afterSave, `during=${duringSave}, after=${afterSave}`);
     await page.close();
   }
 

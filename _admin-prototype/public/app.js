@@ -122,7 +122,7 @@ function showRemoteNotice(draft) {
 }
 
 async function poll() {
-  if (!S.server || document.hidden) return;
+  if (!S.server || document.hidden || S.saving) return;
   let fresh;
   try { fresh = await api('/api/state'); } catch { return; }
   const draftMoved = fresh.draft.version !== S.base.version;
@@ -696,6 +696,7 @@ async function saveDraft() {
     S.base = clone(draft);
     S.server.draft = draft;
     S.pendingRemote = null;
+    $('#remote-notice').hidden = true;
     if (!editedSince) S.working = { catalog: clone(draft.catalog), meta: clone(draft.meta) };
     S.reviews = {};
     S.acknowledged = false;

@@ -18,6 +18,9 @@ public DNS (§9), and the Cloudflare and Supabase documentation cited inline (re
 
 ## 0. Operating model (confirmed by Julian, 2026-11-13)
 
+Julian has also accepted the **local-first implementation direction**: the backend is built and
+tested against a local Supabase stack with fictional data before any hosted environment (§12 B).
+
 | Rule | Real enforcement (§4) | Prototype |
 |---|---|---|
 | **Julian is the only publisher** | A DB unique index allows one publisher row; the function checks a pinned publisher ID; a DB trigger rejects publications by anyone else | One simulated publisher |
@@ -34,8 +37,9 @@ public DNS (§9), and the Cloudflare and Supabase documentation cited inline (re
 - **iOS:** the remote-catalog client is the 2.4.1 code on iOS `main`. Its README says it is not
   release ready, and App Store availability was not verified. The admin preview is a web
   approximation of those SwiftUI screens, not a build.
-- **Android does not read this catalog yet.** A future Android client must implement the **same
-  acceptance rules** as iOS (port the validator test cases), including rejecting documents that fail
+- **Android does not read this catalog yet.** This does **not** block an iOS-only launch. Before
+  Android is **enabled** to read the catalog, its reader must implement the **same acceptance
+  rules** as iOS (port the validator test cases), including rejecting documents that fail
   validation and the `publishedAt` ordering rules. Several admin decisions rely on that, notably
   §6 "fails validation → no timestamp floor". If Android ever accepted something iOS rejects,
   that decision would have to be revisited.
@@ -286,10 +290,34 @@ All three findings at `f44de12` (Codex, P2) were fixed in `53a31e2`, after first
 - retained edits took a newer base;
 - the wrong review baseline was used after drift.
 
-This revision adds no new behavior beyond:
+Revision `d473feb` added:
 - the validation-status wording;
-- the far-future incident now blocks publishing with a distinct incident error and an audit
+- the far-future incident, which blocks publishing with a distinct incident error and an audit
   entry, and is never acknowledgeable.
+
+### Manual review at `d473feb` (no automated re-review ran; Codex credits are exhausted)
+
+- **The three original findings are confirmed fixed** in the current code. `tools/ui-regression.cjs`
+  checks 1–3 pass, and each fails against `f44de12`.
+- **Four new findings, fixed in this revision.** Each has a test that fails against `d473feb` and
+  passes after the fix.
+
+| # | Finding | Fix | Test |
+|---|---|---|---|
+| M1 | The local server checked Origin against Host only, so a DNS-rebinding page (matching Origin and Host) could reach the simulated API | Accept only `127.0.0.1` / `localhost` Host headers | `server.test.mjs` "non-loopback Host" |
+| M2 | A crash after commit while Storage held an **acknowledged** foreign document was classified as acknowledged drift. The crashed publication stayed `recorded` and was never re-sent | "Never landed" also covers an acknowledged foreign digest; reconcile re-sends the recorded bytes | `server.test.mjs` "crash after commit over an acknowledged foreign document" |
+| M3 | The stored history summary was diffed against the recorded publication, not the baseline the publisher reviewed | Summarize against the same baseline | `server.test.mjs` "history summary uses the baseline" |
+| M4 | A background poll during an in-flight save showed a spurious "someone else saved" notice. With edits typed during the save, the notice stayed after the save | Skip polling while saving; clear the notice on a successful save | `ui-regression.cjs` #6 |
+
+- **Areas reviewed with no further findings:**
+  - simulated authorization: identity headers, MFA and role checks per route, publisher-only
+    publish, rollback, reconcile and acknowledgement, single-use upload grants;
+  - save conflicts: If-Match, 409 plus the conflict dialog, retained base;
+  - drift: validation status, the baseline, the floor only for passing documents, the far-future
+    incident;
+  - recovery: crash, timeout, lost response, older and foreign writes, rollback as a new publication.
+- **The dev fault endpoints (`/api/dev/*`)** need only a simulated sign-in. That is acceptable for
+  a local prototype and **must not exist in the real backend** (§2).
 
 ## 11. Isolation
 
@@ -306,7 +334,7 @@ and I created or moved no repository.
 | All changes inside `_admin-prototype/`; Pages build excludes it | Done; `tools/verify-pages-exclusion.sh` PASS |
 | Simulation clearly labeled; fictional data; no keys or network | Done; `tests/security.test.mjs` |
 | Contract parity with the Python validator | Done; 166 / 166 |
-| Review findings fixed and regression-tested | Done; `tools/ui-regression.cjs` 5 / 5 |
+| Review findings fixed and regression-tested (Codex at `f44de12`; manual review at `d473feb`) | Done; `tools/ui-regression.cjs` 6 / 6, `server.test.mjs` |
 | Operating model, MFA, publisher-only, drift and incident rules modeled | Done; `tests/server.test.mjs` |
 | Plan reviewed by Julian | **Open** |
 
@@ -361,7 +389,14 @@ here needs Julian's go-ahead.
    - every superseded or exposed key is revoked, or the legacy JWT keys are disabled where planned;
    - **verification on the live project** that each revoked credential is now refused, using a
      non-destructive request;
-   - no live credential remains in any repository or its history.
+   - no **privileged secret** (secret keys, the service-role or legacy JWT secret, database
+     passwords or URLs with credentials, signing secrets, third-party API secrets) remains in any
+     repository or its history. **Intentionally public client keys** (the publishable or legacy
+     anon key shipped in the apps) are out of scope for this history rule; they are protected by
+     RLS, not secrecy.
+
+   **Verified revocation remains mandatory** for every credential the remediation plan revokes,
+   whether privileged or public.
 
    Only after this is the publisher's secret key created.
 2. Private `85Blends-Admin` created by Julian; code moved there deliberately.
@@ -377,13 +412,14 @@ here needs Julian's go-ahead.
 10. **The iOS remote-catalog client released.** Production publishing only reaches users who
     install it.
 11. The first Production publication goes through `gear-publish`; the seed is never uploaded raw.
-12. Android: remains a separate project. It must implement the identical acceptance rules
-    before relying on the catalog (§1).
+12. Android is **not** a blocker for an iOS-only launch. **Before Android is enabled** to read the
+    catalog, its reader must implement the identical acceptance rules and pass the ported
+    validator cases (§1).
 
 ## 13. Verification in this session
 
-- `node --test _admin-prototype/tests/*.test.mjs`: **51 pass**.
-- `node _admin-prototype/tools/ui-regression.cjs`: 5 / 5.
+- `node --test _admin-prototype/tests/*.test.mjs`: **54 pass**.
+- `node _admin-prototype/tools/ui-regression.cjs`: 6 / 6.
 - `node _admin-prototype/tools/parity.mjs <E85-Blends-App>`: 166 / 166.
 - `_admin-prototype/tools/verify-pages-exclusion.sh`: PASS.
 - Site checks unchanged.

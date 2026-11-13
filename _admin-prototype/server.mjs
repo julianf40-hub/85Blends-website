@@ -263,7 +263,12 @@ export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock
       return { ...base, state: status === 'verified' ? 'in_sync' : repair ? 'repaired' : 'pending', latestStatus: repair ? 'verified' : status };
     }
     const previous = rows.at(-2) ?? null;
-    const neverLanded = ['recorded', 'uncertain'].includes(status) && (originDigest === null || originDigest === previous?.digest);
+    // The latest publication's upload never landed if Storage still holds what was there before it:
+    // nothing, the previous recorded publication, or a foreign document that was acknowledged
+    // before the latest publication was committed.
+    const acknowledgedDigests = new Set((await driftAcks(target)).map((a) => a.digest));
+    const neverLanded = ['recorded', 'uncertain'].includes(status)
+      && (originDigest === null || originDigest === previous?.digest || acknowledgedDigests.has(originDigest));
     if (neverLanded) {
       if (!repair) return { ...base, state: 'pending', reason: 'the latest recorded publication has not reached Storage yet' };
       await storageWrite(target, new TextEncoder().encode(latest.document), null); // identical recorded bytes
@@ -344,8 +349,11 @@ export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock
         throw error;
       }
       const digest = sha256(bytes);
-      const previousDoc = rows.at(-1) ? JSON.parse(rows.at(-1).document) : null;
-      const diff = diffCatalogs(previousDoc, document);
+      // Summarize against the same baseline the publisher reviewed (the acknowledged Storage
+      // document after drift, otherwise the latest recorded publication).
+      const baselineDoc = foreignMayBeAccepted ? JSON.parse(new TextDecoder().decode(await readOrigin(target)))
+        : rows.at(-1) ? JSON.parse(rows.at(-1).document) : null;
+      const diff = diffCatalogs(baselineDoc, document);
       const entry = {
         id: randomUUID(), target, revision: document.revision, publishedAt, publishedBy: user.email,
         digest, document: new TextDecoder().decode(bytes), summary: summarize(diff), rollbackOf, draftVersion,
@@ -604,6 +612,11 @@ export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock
 
   async function handle(req, res) {
     setSecurityHeaders(res);
+    // The server binds to 127.0.0.1 only. A DNS-rebinding page would still reach it under its own
+    // hostname, with matching Origin and Host headers, so accept loopback Host names only.
+    if (!/^(127\.0\.0\.1|localhost)(:\d{1,5})?$/.test(String(req.headers.host ?? ''))) {
+      return send(res, 403, { error: 'bad_host', message: 'This local prototype only answers on 127.0.0.1 or localhost' });
+    }
     const url = new URL(req.url, `http://${req.headers.host ?? '127.0.0.1'}`);
     try {
       if (url.pathname.startsWith('/api/')) return await api(req, res, url);

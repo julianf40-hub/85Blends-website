@@ -332,3 +332,48 @@ test('a far-future foreign timestamp is refused at acknowledgement and publishin
   assert.match(audit, /drift_future_timestamp_refused/);
   assert.match(audit, /incident_future_timestamp_blocked_publish/);
 });
+
+// ---- manual review at d473feb ------------------------------------------------------------------
+
+test('local server refuses non-loopback Host headers (DNS-rebinding defense)', async () => {
+  const { request } = await import('node:http');
+  const port = new URL(base).port;
+  const status = await new Promise((resolve, reject) => {
+    const req = request({ host: '127.0.0.1', port, path: '/api/session', headers: { Host: `rebind.example:${port}` } }, (res) => { res.resume(); resolve(res.statusCode); });
+    req.on('error', reject);
+    req.end();
+  });
+  assert.equal(status, 403);
+});
+
+test('a crash after commit over an acknowledged foreign document is repaired, not left as drift', async () => {
+  // reset staging to a clean, verified state by superseding the far-future incident is NOT allowed,
+  // so use production (no drift there) for this scenario.
+  await saveDraft(approveAll);
+  await call('/api/dev/external-write', { method: 'POST', body: { target: 'production', kind: 'cli' } });
+  const drift = await storageOf('production');
+  assert.equal(drift.state, 'drift');
+  assert.equal((await call('/api/drift/acknowledge', { method: 'POST', body: { target: 'production', digest: drift.originDigest } })).status, 200);
+  await fault('production', 'crash_after_commit');
+  const crashed = await publish('production');
+  assert.equal(crashed.status, 500);
+  const pending = await storageOf('production');
+  assert.equal(pending.state, 'pending', JSON.stringify(pending));
+  const fixed = await call('/api/reconcile', { method: 'POST', body: { target: 'production' } });
+  assert.equal(fixed.data.state, 'repaired');
+  const { data } = await call('/api/history?target=production');
+  assert.equal(data.history[0].revision, crashed.data.revision);
+  assert.equal(data.history[0].storageStatus, 'verified');
+  assert.equal(await objectBytes('production'), data.history[0].document);
+});
+
+test('the history summary uses the baseline the publisher reviewed', async () => {
+  await call('/api/dev/external-write', { method: 'POST', body: { target: 'production', kind: 'cli' } }); // drops a card
+  const drift = await storageOf('production');
+  await call('/api/drift/acknowledge', { method: 'POST', body: { target: 'production', digest: drift.originDigest } });
+  const review = await call('/api/review', { method: 'POST', body: { target: 'production' } });
+  const published = await publish('production');
+  assert.equal(published.status, 200, JSON.stringify(published.data));
+  assert.equal(published.data.summary, review.data.summary);
+  assert.match(published.data.summary, /1 added/);
+});
