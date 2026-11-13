@@ -13,6 +13,12 @@
 // Publishing runs under a lease with a fencing token (gear_acquire_lease): reconcile Storage with
 // the database, validate, record, upload, read back. A crash leaves the lease to expire; the next
 // run re-sends recorded bytes that never landed. Anything else in Storage is drift.
+//
+// Storage writes use the CALLER's verified JWT, not a service key, and carry the lease token in the
+// object's user metadata. Storage RLS (migration 20261113190000) then enforces, when the object row
+// is committed: publisher + aal2 from that JWT, the live lease token, a compare-and-swap on the object
+// version captured before it was read, and (Production) a recent TOTP. A stale writer whose lease
+// expired, or a reconcile racing another writer, is rejected by Storage itself.
 
 import { parseBytes, checkSuccessor, encodeCatalog, collectIssues, CatalogRejected } from '../_shared/validator.mjs';
 import { diffCatalogs, summarize } from '../_shared/diff.mjs';
@@ -74,24 +80,44 @@ async function readOrigin(target: string): Promise<Uint8Array | null> {
 }
 
 class UploadUncertain extends Error {}
-async function upload(target: string, bytes: Uint8Array, fault: string | null) {
+class StorageRejected extends Error {}
+type WriteContext = { jwt: string; token: string };
+const b64 = (text: string) => btoa(String.fromCharCode(...new TextEncoder().encode(text)));
+
+async function upload(target: string, bytes: Uint8Array, fault: string | null, ctx: WriteContext) {
   if (fault === 'upload_timeout') throw new UploadUncertain('upload timed out before Storage answered (test fault: not stored)');
   let res: Response;
   try {
     res = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${objectPath(target)}`, {
       method: 'POST', body: bytes,
-      headers: serviceHeaders({ 'Content-Type': 'application/json', 'Cache-Control': 'max-age=60', 'x-upsert': 'true' }),
+      headers: {
+        apikey: ANON_KEY, Authorization: `Bearer ${ctx.jwt}`, // the caller's verified session, subject to Storage RLS
+        'Content-Type': 'application/json', 'Cache-Control': 'max-age=60', 'x-upsert': 'true',
+        'x-metadata': b64(JSON.stringify({ gear_lease: ctx.token })),
+      },
       signal: AbortSignal.timeout(20_000),
     });
   } catch (error) {
     throw new UploadUncertain(`upload did not complete (${(error as Error).message}); it may or may not be stored`);
   }
-  if (!res.ok) throw new HttpError(502, 'upload_refused', `Storage refused the upload: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+  if (!res.ok) {
+    const text = (await res.text()).slice(0, 300);
+    // RLS refusal: stale lease token, object changed since it was read (CAS), not the aal2 publisher,
+    // or (Production) TOTP step-up expired. Storage kept the previous object version.
+    if ((res.status === 400 || res.status === 403) && /row-level security|Unauthorized|policy/i.test(text)) throw new StorageRejected(text);
+    throw new HttpError(502, 'upload_refused', `Storage refused the upload: HTTP ${res.status} ${text}`);
+  }
   if (fault === 'response_lost') throw new UploadUncertain('response lost after the body was sent (test fault: stored)');
 }
 
+const prepareWrite = (target: string, token: string) => rpc('gear_prepare_write', { p_token: token, p_target: target });
+const pause = async (fault: string | null, point: string) => {
+  const m = fault ? new RegExp(`^pause_${point}:(\\d{1,5})$`).exec(fault) : null;
+  if (m) await new Promise((r) => setTimeout(r, Number(m[1])));
+};
+
 // ---------------------------------------------------------------- authorization
-type Caller = { id: string; email: string; role: string | null; aal: string; amr: { method: string; timestamp: number }[] };
+type Caller = { id: string; email: string; role: string | null; aal: string; amr: { method: string; timestamp: number }[]; jwt: string };
 
 function base64UrlDecode(part: string) {
   const b64 = part.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(part.length / 4) * 4, '=');
@@ -109,7 +135,7 @@ async function authenticate(req: Request): Promise<Caller> {
   const claims = JSON.parse(new TextDecoder().decode(base64UrlDecode(jwt.split('.')[1])));
   if (claims.sub !== user.id) throw new HttpError(401, 'unauthenticated', 'Session subject mismatch');
   const rows = await rest(`gear_admins?select=role&user_id=eq.${encodeURIComponent(user.id)}`);
-  return { id: user.id, email: user.email, role: rows[0]?.role ?? null, aal: claims.aal, amr: Array.isArray(claims.amr) ? claims.amr : [] };
+  return { id: user.id, email: user.email, role: rows[0]?.role ?? null, aal: claims.aal, amr: Array.isArray(claims.amr) ? claims.amr : [], jwt };
 }
 
 function requireAdmin(caller: Caller) {
@@ -143,7 +169,11 @@ async function loadTarget(target: string) {
   return { head, latest, previous: pubs[1] ?? null, status, acks };
 }
 
-async function inspectStorage(target: string, opts: { repair?: boolean; token?: string } = {}) {
+async function inspectStorage(target: string, opts: { repair?: boolean; token?: string; jwt?: string; fault?: string | null } = {}) {
+  // Repair mode captures the stored object version FIRST, under the lease. Every write below must
+  // replace exactly that version (Storage RLS), so content that changes after this read is never
+  // overwritten automatically.
+  if (opts.repair) await prepareWrite(target, opts.token!);
   const { latest, previous, status, acks } = await loadTarget(target);
   const origin = await readOrigin(target);
   const originDigest = origin ? await sha256(origin) : null;
@@ -158,11 +188,16 @@ async function inspectStorage(target: string, opts: { repair?: boolean; token?: 
     && (originDigest === null || originDigest === previous?.digest || acknowledged.has(originDigest));
   if (neverLanded) {
     if (!opts.repair) return { ...base, state: 'pending', reason: 'the latest recorded publication has not reached Storage yet' };
-    const bytes = new TextEncoder().encode(latest.document); // identical recorded bytes
-    try { await upload(target, bytes, null); } catch (error) {
+    await pause(opts.fault ?? null, 'before_resend');
+    const bytes = new TextEncoder().encode(latest.document); // identical recorded bytes; one attempt, no retry loop
+    try { await upload(target, bytes, null, { jwt: opts.jwt!, token: opts.token! }); } catch (error) {
       if (error instanceof UploadUncertain) return { ...base, state: 'pending', reason: error.message };
+      if (error instanceof StorageRejected) {
+        return { ...base, state: 'pending', reason: 'Storage changed after it was read (or the lease expired); nothing was overwritten. Inspect again.' };
+      }
       throw error;
     }
+    await prepareWrite(target, opts.token!); // our own write is now the expected version
     const readBack = await readOrigin(target);
     const ok = !!readBack && (await sha256(readBack)) === latest.digest;
     await rpc('gear_record_status', { p_token: opts.token, p_publication_id: latest.id, p_status: ok ? 'verified' : 'uncertain', p_note: 're-sent identical recorded bytes during reconcile' });
@@ -210,7 +245,7 @@ async function publish(caller: Caller, body: any, fault: string | null) {
   requirePublisher(caller, target);
   if (target === 'production' && body.confirmation !== CONFIRMATION) throw new HttpError(400, 'confirmation_required', `Type ${CONFIRMATION} to publish to Production`);
   return withLease(target, async (token, keepLease) => {
-    const storage: any = await inspectStorage(target, { repair: true, token });
+    const storage: any = await inspectStorage(target, { repair: true, token, jwt: caller.jwt, fault });
     if (storage.state === 'drift' && storage.futureIncident) {
       await rpc('gear_audit', { p_actor: caller.id, p_event: 'incident_future_timestamp_blocked_publish', p_detail: { target, digest: storage.originDigest, publishedAt: storage.originPublishedAt } });
       throw new HttpError(409, 'incident_future_timestamp', `Storage holds a catalog that passes validation stamped ${storage.originPublishedAt}, more than ${MAX_FUTURE_SKEW} s ahead. Publishing is blocked and reported; nothing is overwritten.`, { storage });
@@ -263,6 +298,7 @@ async function publish(caller: Caller, body: any, fault: string | null) {
     }
     const digest = await sha256(bytes);
     const summary = summarize(diffCatalogs(baselineDoc, document));
+    await pause(fault, 'before_record');
     const publicationId = await rpc('gear_record_publication', {
       p_token: token, p_target: target, p_expected_head_revision: head?.revision ?? null, p_revision: document.revision,
       p_published_at: publishedAt, p_document: new TextDecoder().decode(bytes), p_digest: digest, p_summary: summary,
@@ -274,9 +310,17 @@ async function publish(caller: Caller, body: any, fault: string | null) {
       keepLease(); // a crashed process would not release its lease; it expires
       throw new HttpError(500, 'test_crash_after_commit', 'Test fault: stopped after the database commit, before the Storage upload', { revision: document.revision });
     }
+    await pause(fault, 'after_commit');
     try {
-      await upload(target, bytes, fault);
+      await upload(target, bytes, fault, { jwt: caller.jwt, token });
     } catch (error) {
+      if (error instanceof StorageRejected) {
+        // Storage refused this write (stale lease, object changed since it was read, or step-up
+        // expired). Try to record it; if the lease is gone that fails too, which is correct: a stale
+        // process may not finalize database state either.
+        await rpc('gear_record_status', { p_token: token, p_publication_id: publicationId, p_status: 'conflict', p_note: 'Storage rejected the write (RLS)' }).catch(() => {});
+        throw new HttpError(409, 'storage_write_rejected', 'Storage rejected the write: the lease expired, the object changed since it was read, or the MFA step-up expired. Nothing was overwritten.', { revision: document.revision });
+      }
       if (!(error instanceof UploadUncertain)) throw error;
       await rpc('gear_record_status', { p_token: token, p_publication_id: publicationId, p_status: 'uncertain', p_note: error.message });
       return { ...result, storage: 'uncertain', note: error.message };
@@ -288,9 +332,9 @@ async function publish(caller: Caller, body: any, fault: string | null) {
   });
 }
 
-async function reconcile(caller: Caller, body: any) {
+async function reconcile(caller: Caller, body: any, fault: string | null) {
   requirePublisher(caller, body.target);
-  return withLease(body.target, (token) => inspectStorage(body.target, { repair: true, token }));
+  return withLease(body.target, (token) => inspectStorage(body.target, { repair: true, token, jwt: caller.jwt, fault }));
 }
 
 async function acknowledge(caller: Caller, body: any) {
@@ -310,7 +354,9 @@ async function acknowledge(caller: Caller, body: any) {
 
 async function inspect(caller: Caller, body: any) {
   requireAdmin(caller);
-  return inspectStorage(body.target);
+  const result: any = await inspectStorage(body.target);
+  if (TEST_FAULTS) result.diagnostics = { serviceCredential: SERVICE_KEY.startsWith('sb_secret_') ? 'secret_key' : 'legacy_service_role_jwt' };
+  return result;
 }
 
 Deno.serve(async (req) => {
@@ -324,7 +370,7 @@ Deno.serve(async (req) => {
     switch (body.action) {
       case 'publish': return json(200, await publish(caller, body, fault));
       case 'rollback': return json(200, await publish(caller, { ...body, rollbackOf: body.publicationId }, fault));
-      case 'reconcile': return json(200, await reconcile(caller, body));
+      case 'reconcile': return json(200, await reconcile(caller, body, fault));
       case 'acknowledge': return json(200, await acknowledge(caller, body));
       case 'inspect': return json(200, await inspect(caller, body));
       default: throw new HttpError(400, 'bad_action', 'Unknown action');

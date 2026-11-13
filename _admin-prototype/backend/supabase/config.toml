@@ -388,7 +388,10 @@ deno_version = 2
 [edge_runtime.secrets]
 GEAR_PUBLISHER_USER_ID = "00000000-0000-4000-8000-0000000000a1"
 GEAR_LEASE_SECONDS = "4"
-GEAR_PRODUCTION_STEP_UP_SECONDS = "900"
+# Short locally so the expiry test runs quickly; production uses 900 (15 minutes).
+GEAR_PRODUCTION_STEP_UP_SECONDS = "40"
+# New-style local secret key, injected at start by tools/start-local.sh (never committed).
+GEAR_PUBLISHER_SECRET_KEY = "env(GEAR_LOCAL_SECRET_KEY)"
 GEAR_ALLOW_TEST_FAULTS = "local-only"
 
 [analytics]

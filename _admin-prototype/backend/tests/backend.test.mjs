@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { execSync } from 'node:child_process';
 import { createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { USERS, LOCAL_TEST_PASSWORD } from '../tools/make-seed.mjs';
+import { USERS, LOCAL_TEST_PASSWORD, LOCAL_STEP_UP_SECONDS } from '../tools/make-seed.mjs';
 
 const DIR = new URL('..', import.meta.url).pathname;
 let ENV;
@@ -174,11 +174,35 @@ test('DB: one publisher only; publications require the publisher, aal2, a matchi
 });
 
 // ---------------------------------------------------------------- Storage writes
-test('Storage: public read; anon and signed-in clients (even the aal2 publisher) cannot write', async () => {
-  for (const token of [undefined, publisher]) {
-    const r = await http('/storage/v1/object/recommended-gear/staging/catalog-v1.json', { method: 'POST', token, body: '{}', raw: true, headers: { 'Content-Type': 'application/json' } });
-    assert.ok(r.status >= 400, `token=${!!token}: ${r.status} ${JSON.stringify(r.data)}`);
+const svc = (fnName, body) => http(`/rest/v1/rpc/${fnName}`, { method: 'POST', key: ENV.SERVICE_ROLE_KEY, token: ENV.SERVICE_ROLE_KEY, body });
+const directWrite = (target, token, leaseToken, text) => http(`/storage/v1/object/recommended-gear/${objectPath(target)}`, {
+  method: 'POST', token, body: text, raw: true,
+  headers: { 'Content-Type': 'application/json', 'x-upsert': 'true', ...(leaseToken ? { 'x-metadata': Buffer.from(JSON.stringify({ gear_lease: leaseToken })).toString('base64') } : {}) },
+});
+
+test('Storage RLS: catalog writes need the aal2 publisher JWT, the live lease token and an unchanged object version', async () => {
+  const body = JSON.stringify({ schemaVersion: 1, revision: 'direct', publishedAt: 1, brands: [] });
+  assert.ok((await directWrite('staging', undefined, null, body)).status >= 400, 'anon');
+  assert.ok((await directWrite('staging', publisher, null, body)).status >= 400, 'publisher without a lease token');
+  assert.ok((await directWrite('staging', publisher, '00000000-0000-4000-8000-000000000000', body)).status >= 400, 'forged token');
+  const lease = (await svc('gear_acquire_lease', { p_target: 'staging', p_ttl_seconds: 30 })).data;
+  try {
+    assert.ok((await directWrite('staging', publisher, lease, body)).status >= 400, 'no prepared expectation yet');
+    await svc('gear_prepare_write', { p_token: lease, p_target: 'staging' });
+    assert.ok((await directWrite('staging', await signIn('publisher'), lease, body)).status >= 400, 'aal1 session with a valid token');
+    assert.ok((await directWrite('staging', await mfa('editor'), lease, body)).status >= 400, 'aal2 editor with a valid token');
+    assert.equal((await directWrite('staging', publisher, lease, body)).status, 200, 'aal2 publisher + live token + prepared version');
+    // compare-and-swap: the version changed, so a second write without re-preparing is refused
+    assert.ok((await directWrite('staging', publisher, lease, body.replace('direct', 'direct-2'))).status >= 400, 'CAS');
+    assert.equal((await publicRead('staging')).data.revision, 'direct');
+  } finally {
+    await svc('gear_release_lease', { p_target: 'staging', p_token: lease });
   }
+  // a released (stale) token is refused even with a prepared expectation
+  assert.ok((await directWrite('staging', publisher, lease, body)).status >= 400, 'released token');
+  // clean slate for the publishing tests: delete the direct object through the Storage API (direct SQL deletes are blocked)
+  const del = await http('/storage/v1/object/recommended-gear/staging/catalog-v1.json', { method: 'DELETE', key: ENV.SERVICE_ROLE_KEY, token: ENV.SERVICE_ROLE_KEY });
+  assert.equal(del.status, 200, JSON.stringify(del.data));
 });
 
 // ---------------------------------------------------------------- function authorization
@@ -218,6 +242,7 @@ test('staging publish: recorded, uploaded, verified, publicly readable; MFA evid
 });
 
 test('production: typed confirmation and partner approvals required', async () => {
+  publisher = await mfa('publisher');
   const noConfirm = await fn(publisher, { action: 'publish', target: 'production', draftVersion: draftRow().version, expectedLiveRevision: null });
   assert.equal(noConfirm.data.error, 'confirmation_required');
   const pending = await publish(publisher, 'production');
@@ -319,9 +344,15 @@ test('far-future catalog that passes validation: not acknowledgeable, publishing
   assert.equal((await fn(publisher, { action: 'reconcile', target: 'staging' })).data.state, 'drift');
   assert.deepEqual((await publicRead('staging')).data, future); // nothing overwritten
   assert.match(sql(`select string_agg(event, ',') from public.gear_audit_log`), /drift_future_timestamp_refused.*incident_future_timestamp_blocked_publish|incident_future_timestamp_blocked_publish.*drift_future_timestamp_refused/);
+  // Incident resolution is a separate, explicit maintainer action (plan §6), simulated here so later
+  // tests start clean: restore the latest recorded bytes with the service key, then inspect.
+  const recorded = sql(`select document from public.gear_catalog_publications where target = 'staging' order by published_at desc limit 1`);
+  assert.equal((await serviceWrite('staging', recorded + '\n')).status, 200);
+  assert.equal((await fn(publisher, { action: 'inspect', target: 'staging' })).data.state, 'in_sync');
 });
 
 test('rollback (production) is a new publication with a new revision and a newer publishedAt', async () => {
+  publisher = await mfa('publisher');
   const [first] = JSON.parse(sql(`select json_agg(row_to_json(p) order by published_at) from (select id, revision, published_at from public.gear_catalog_publications where target = 'production') p`));
   const before = head('production');
   const r = await fn(publisher, { action: 'rollback', target: 'production', publicationId: first.id, expectedLiveRevision: before.revision, confirmation: 'PUBLISH PRODUCTION' });
@@ -337,4 +368,127 @@ test('a global sign-out revokes every session of the publisher (e.g. after losin
   assert.equal((await http('/auth/v1/logout?scope=global', { method: 'POST', token: a })).status, 204);
   assert.equal((await fn(b, { action: 'inspect', target: 'staging' })).status, 401);
   publisher = await mfa('publisher'); // fresh session for anything that runs later
+});
+
+// ---------------------------------------------------------------- round 2: step-up, keys, stale writers, reconcile
+test('the function uses the new-style secret key, and the platform accepts it in the apikey header alone', async () => {
+  const inspect = await fn(publisher, { action: 'inspect', target: 'staging' });
+  assert.equal(inspect.data.diagnostics.serviceCredential, 'secret_key');
+  assert.match(ENV.SECRET_KEY, /^sb_secret_/);
+  const rest = await fetch(`${ENV.API_URL}/rest/v1/gear_publication_head?select=target`, { headers: { apikey: ENV.SECRET_KEY } });
+  assert.equal(rest.status, 200);
+  assert.equal((await rest.json()).length, 2);
+  const rpcCall = await fetch(`${ENV.API_URL}/rest/v1/rpc/gear_acquire_lease`, { method: 'POST', headers: { apikey: ENV.SECRET_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ p_target: 'production', p_ttl_seconds: 5 }) });
+  assert.equal(rpcCall.status, 200);
+  const token = await rpcCall.json();
+  await fetch(`${ENV.API_URL}/rest/v1/rpc/gear_release_lease`, { method: 'POST', headers: { apikey: ENV.SECRET_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ p_target: 'production', p_token: token }) });
+  // the secret key is refused as a Bearer token in Authorization: it is not a JWT
+  const asBearer = await fetch(`${ENV.API_URL}/rest/v1/gear_publication_head?select=target`, { headers: { apikey: ENV.PUBLISHABLE_KEY, Authorization: `Bearer ${ENV.SECRET_KEY}` } });
+  assert.notEqual(asBearer.status, 200);
+});
+
+test('Production step-up: rejected after the TOTP window expires, also by Storage RLS; a token refresh does not renew it; a new TOTP does', async () => {
+  const signedIn = await http('/auth/v1/token?grant_type=password', { method: 'POST', body: { email: USERS.publisher.email, password: LOCAL_TEST_PASSWORD } });
+  const { id, secret } = factors.publisher;
+  const challenge = await http(`/auth/v1/factors/${id}/challenge`, { method: 'POST', token: signedIn.data.access_token, body: {} });
+  const verified = await http(`/auth/v1/factors/${id}/verify`, { method: 'POST', token: signedIn.data.access_token, body: { challenge_id: challenge.data.id, code: totp(secret) } });
+  const session = verified.data;
+  await sleep((LOCAL_STEP_UP_SECONDS + 3) * 1000);
+  // 1. the function refuses
+  const viaFunction = await publish(session.access_token, 'production');
+  assert.equal(viaFunction.data.error, 'mfa_step_up_required', JSON.stringify(viaFunction.data));
+  // 2. Storage RLS refuses independently, even with a live lease token and a prepared version
+  const lease = (await svc('gear_acquire_lease', { p_target: 'production', p_ttl_seconds: 30 })).data;
+  try {
+    await svc('gear_prepare_write', { p_token: lease, p_target: 'production' });
+    const direct = await directWrite('production', session.access_token, lease, '{}');
+    assert.ok(direct.status >= 400, `stale TOTP direct write: ${direct.status}`);
+  } finally {
+    await svc('gear_release_lease', { p_target: 'production', p_token: lease });
+  }
+  // 3. refreshing the session keeps the old TOTP time
+  const refreshed = await http('/auth/v1/token?grant_type=refresh_token', { method: 'POST', body: { refresh_token: session.refresh_token } });
+  assert.equal(refreshed.status, 200);
+  assert.equal(claims(refreshed.data.access_token).aal, 'aal2');
+  assert.equal((await publish(refreshed.data.access_token, 'production')).data.error, 'mfa_step_up_required');
+  await saveDraft(publisher, (c, m) => { for (const b of c.brands) m.approvals[b.id] = 'approved'; });
+  // 4. a fresh TOTP verification on that session restores Production access
+  const again = await http(`/auth/v1/factors/${id}/challenge`, { method: 'POST', token: refreshed.data.access_token, body: {} });
+  const reverified = await http(`/auth/v1/factors/${id}/verify`, { method: 'POST', token: refreshed.data.access_token, body: { challenge_id: again.data.id, code: totp(secret) } });
+  assert.equal(reverified.status, 200, JSON.stringify(reverified.data));
+  const ok = await publish(reverified.data.access_token, 'production');
+  assert.equal(ok.status, 200, JSON.stringify(ok.data));
+  publisher = reverified.data.access_token;
+});
+
+test('stale publisher A (paused after its DB commit) cannot overwrite B or finalize state after its lease expired', async () => {
+  publisher = await mfa('publisher');
+  await saveDraft(publisher, (c) => { c.brands[0].priceText = 'From $101'; });
+  const startHead = head('staging');
+  // A records its publication, then stalls for 8 s before uploading (lease is 4 s locally)
+  const aPromise = publish(publisher, 'staging', {}, { 'x-gear-test-fault': 'pause_after_commit:8000' });
+  const committedBy = Date.now() + 3000;
+  while (head('staging').revision === startHead.revision && Date.now() < committedBy) await sleep(100);
+  const aRevision = head('staging').revision;
+  assert.notEqual(aRevision, startHead.revision, 'A has committed');
+  await sleep(4500); // A's lease (4 s) has expired; A is still paused
+  const b = await fn(publisher, { action: 'publish', target: 'staging', draftVersion: draftRow().version, expectedLiveRevision: aRevision });
+  assert.equal(b.status, 200, JSON.stringify(b.data));
+  assert.equal(b.data.storage, 'verified');
+  const a = await aPromise;
+  assert.equal(a.status, 409, JSON.stringify(a.data));
+  assert.equal(a.data.error, 'storage_write_rejected');
+  // Storage still serves B; the database head is B; A's row was finalized by B's reconcile, not by A
+  assert.equal((await publicRead('staging')).data.revision, b.data.revision);
+  assert.equal(head('staging').revision, b.data.revision);
+  const aStatuses = sql(`select string_agg(s.status || ':' || coalesce(s.note, ''), ' | ' order by s.id) from public.gear_publication_status s
+    join public.gear_catalog_publications p on p.id = s.publication_id where p.revision = '${aRevision}'`);
+  assert.match(aStatuses, /^recorded:.* \| verified:re-sent identical recorded bytes during reconcile$/);
+  assert.equal((await fn(publisher, { action: 'inspect', target: 'staging' })).data.state, 'in_sync');
+});
+
+test('stale publisher A (paused before recording) cannot record after B took the lease', async () => {
+  const startHead = head('staging');
+  await saveDraft(publisher, (c) => { c.brands[0].priceText = 'From $102'; });
+  const aPromise = publish(publisher, 'staging', {}, { 'x-gear-test-fault': 'pause_before_record:7000' });
+  await sleep(5500); // A holds a lease it has not used; it expires
+  const b = await publish(publisher, 'staging');
+  assert.equal(b.status, 200, JSON.stringify(b.data));
+  const a = await aPromise;
+  assert.equal(a.status, 409, JSON.stringify(a.data));
+  assert.equal(a.data.error, 'lease_lost');
+  assert.equal(sql(`select count(*) from public.gear_catalog_publications where target = 'staging' and published_at > ${startHead.published_at}`), '1');
+  assert.equal((await publicRead('staging')).data.revision, b.data.revision);
+});
+
+test('reconcile reads first and never overwrites content that changed after it read (CAS), even mid-repair', async () => {
+  await saveDraft(publisher, (c) => { c.brands[0].priceText = 'From $103'; });
+  const r = await publish(publisher, 'staging', {}, { 'x-gear-test-fault': 'upload_timeout' }); // recorded, not stored
+  assert.equal(r.data.storage, 'uncertain');
+  // reconcile decides to re-send, then pauses; meanwhile a bypass writer replaces the object
+  const recon = fn(publisher, { action: 'reconcile', target: 'staging' }, { 'x-gear-test-fault': 'pause_before_resend:2500' });
+  await sleep(800);
+  const current = (await publicRead('staging')).data;
+  const intruder = { ...current, revision: `intruder-${Date.now()}` };
+  assert.equal((await serviceWrite('staging', JSON.stringify(intruder, null, 2) + '\n')).status, 200);
+  const result = (await recon).data;
+  assert.equal(result.state, 'pending', JSON.stringify(result));
+  assert.match(result.reason, /nothing was overwritten/);
+  assert.equal((await publicRead('staging')).data.revision, intruder.revision); // not overwritten
+  assert.equal((await fn(publisher, { action: 'inspect', target: 'staging' })).data.state, 'drift');
+  // resolve for the next test: acknowledge, then supersede
+  const drift = (await fn(publisher, { action: 'inspect', target: 'staging' })).data;
+  assert.equal((await fn(publisher, { action: 'acknowledge', target: 'staging', digest: drift.originDigest })).status, 200);
+  assert.equal((await publish(publisher, 'staging')).status, 200);
+});
+
+test('reconcile after a lost response reads back and does not write when Storage already holds the bytes', async () => {
+  await saveDraft(publisher, (c) => { c.brands[0].priceText = 'From $104'; });
+  const r = await publish(publisher, 'staging', {}, { 'x-gear-test-fault': 'response_lost' }); // stored, response lost
+  assert.equal(r.data.storage, 'uncertain');
+  const versionBefore = sql(`select version from storage.objects where bucket_id = 'recommended-gear' and name = 'staging/catalog-v1.json'`);
+  const result = (await fn(publisher, { action: 'reconcile', target: 'staging' })).data;
+  assert.equal(result.state, 'repaired');
+  assert.equal(sql(`select version from storage.objects where bucket_id = 'recommended-gear' and name = 'staging/catalog-v1.json'`), versionBefore, 'no new write');
+  assert.equal(sql(`select status from public.gear_publication_status s join public.gear_catalog_publications p on p.id = s.publication_id where p.revision = '${r.data.revision}' order by s.id desc limit 1`), 'verified');
 });

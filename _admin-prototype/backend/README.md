@@ -12,127 +12,132 @@ Requires Docker and the Supabase CLI (tested with 2.117.0).
 
 ```sh
 cd _admin-prototype/backend
-supabase start            # in this sandbox: SUPABASE_INTERNAL_IMAGE_REGISTRY=docker.io supabase start
-node --test tests/*.test.mjs   # resets the local DB first; ~1–2 minutes
+tools/start-local.sh            # starts the stack; hands gear-publish the local sb_secret_ key via env
+node --test tests/*.test.mjs    # resets the local DB first; ~3–4 minutes (one test waits out the 40 s MFA window)
 supabase stop
 ```
 
-`node tools/make-seed.mjs` regenerates `supabase/seed.sql` from `../data/fictional-draft.json`.
-The local keys the CLI prints are Supabase's standard local demo keys. They are never committed
-(`supabase/.temp` is ignored), and the tests read them from `supabase status`.
+- `tools/start-local.sh` passes the local new-style secret key to the function as
+  `GEAR_PUBLISHER_SECRET_KEY` through `env(GEAR_LOCAL_SECRET_KEY)`, so no key is ever committed.
+  In this sandbox the CLI image registry is overridden to Docker Hub.
+- `node tools/make-seed.mjs` regenerates `supabase/seed.sql` from `../data/fictional-draft.json`.
+- The local keys are Supabase's standard local demo keys. They are never committed
+  (`supabase/.temp` is ignored), and the tests read them from `supabase status`.
 
 ## What is implemented
 
 | Piece | File |
 |---|---|
-| Schema, RLS, grants, triggers, RPCs, local bucket | `supabase/migrations/20261113180000_gear_admin.sql` |
-| Fictional users (publisher, editor, outsider, spare), admin rows, draft | `supabase/seed.sql` (generated) |
+| Schema, RLS, grants, triggers, RPCs, lease, local bucket | `supabase/migrations/20261113180000_gear_admin.sql` |
+| Storage fencing and compare-and-swap, Production step-up in Storage RLS | `supabase/migrations/20261113190000_gear_storage_cas.sql` |
+| Fictional users (publisher, editor, outsider, spare), admin rows, draft, local step-up window | `supabase/seed.sql` (generated) |
 | `gear-publish` Edge Function (publish, rollback, reconcile, acknowledge, inspect) | `supabase/functions/gear-publish/index.ts` |
 | Shared contract modules (byte-identical to `../lib/`) | `supabase/functions/_shared/{validator,diff}.mjs` |
 | Integration tests against the running stack | `tests/backend.test.mjs` |
-| Local config: TOTP enroll+verify on, sign-ups off, verify_jwt on, test-fault flag local-only | `supabase/config.toml` |
 
-**Authorization (independent layers):**
-1. The gateway requires a JWT (`verify_jwt = true`).
-2. The function checks the session with Auth (`GET /auth/v1/user`), so revoked or signed-out
-   sessions fail.
-3. `aal2` is required.
-4. Production needs a TOTP `amr` entry within `GEAR_PRODUCTION_STEP_UP_SECONDS`.
-5. The `publisher` role in `gear_admins` **and** the pinned `GEAR_PUBLISHER_USER_ID` are both
-   required.
-6. A DB trigger requires, on every publication row:
-   - the single publisher (a unique index allows only one);
-   - `aal2`;
-   - a digest equal to `sha256` of the stored bytes;
-   - a strictly increasing `publishedAt`.
-7. History, status, drift acknowledgements and audit are append-only (triggers).
+### Publishing: lease, then Storage compare-and-swap
 
-RLS gives read access only to admins with `aal2`. There are no client write grants or policies on
-any `gear_*` table or on the bucket. The publication RPCs are executable by `service_role` only.
+A database fencing token alone does not stop a stale process from overwriting Storage. The
+negative control below shows that it doesn't. So:
 
-**Draft concurrency:** `save_gear_draft(expected_version, …)` is a security-definer RPC. It needs
-an `aal2` admin, does a conditional update on `version`, and raises HTTP 409 on conflict. It
-strips server-stamped fields.
+1. `gear_acquire_lease` returns a token, and every DB write must present the live token.
+2. `gear_prepare_write` captures the stored object version **before** the function reads the object.
+3. The upload uses the **caller's verified JWT** (not a service key) with the lease token in
+   `x-metadata`. `storage.objects` RLS, evaluated by Postgres when Storage commits the object row,
+   requires:
+   - publisher plus `aal2` from that JWT;
+   - the live, unexpired lease token;
+   - for an update, the existing version equal to the prepared version (compare-and-swap);
+   - for Production, a TOTP `amr` entry within `gear_settings.production_step_up_seconds`.
 
-**Publishing:** a **lease with a fencing token** on `gear_publication_head`, rather than a Postgres
-transaction held across the HTTP upload. A crashed function's lease expires, and every write
-(record, status, acknowledgement) must present the live token. In order:
-1. Reconcile the Storage origin (re-send recorded bytes that never landed).
-2. Block drift until it is acknowledged, and block a far-future catalog as an incident.
-3. Validate (same validator as the apps) and check partner approvals for Production.
-4. Stamp `max(now, head + 1, acknowledged floor)`.
-5. Record.
-6. Upload with `Cache-Control: max-age=60`.
-7. Read back from the authenticated origin and record `verified` / `uncertain` / `conflict`.
+   A rejected upload leaves the served object unchanged.
+4. Reconcile reads first, makes at most one re-send per call (no retry loop), re-sends only
+   recorded bytes that never landed, and only through the same compare-and-swap. If Storage
+   already holds the bytes, it records `verified` without writing.
 
-**Test faults** (`x-gear-test-fault`: `crash_after_commit`, `upload_timeout`, `response_lost`) work
-only when `GEAR_ALLOW_TEST_FAULTS=local-only` **and** `SUPABASE_URL` is a local address. The
-flag must never be set in a hosted project.
+**Negative control (run in this session, then reverted):** with uploads switched to the service
+key, a publisher A paused past its lease overwrote publisher B's newer object. Storage served A's
+older revision while the head said B. The database still refused A's status update (`lease_lost`),
+but too late. With the RLS-checked upload, the same scenario is refused by Storage
+(`storage_write_rejected`) and B's object stays.
 
-## Local validation (latest run: 22 / 22 pass, 3 consecutive runs)
+**Still not prevented:** service and secret keys bypass Storage RLS. Writes made with them are
+detected as drift and require acknowledgement (plan §6).
 
-- **Real TOTP:** password sign-in is `aal1`; enrolling and verifying a TOTP factor yields `aal2`
-  with a `totp` `amr` entry; a wrong code is refused.
-- **Sign-ups** are disabled.
-- **RLS:** anon and `aal1` see nothing; `aal2` admins read; outsiders see nothing.
-- **No client writes:** clients can't write `gear_*` tables or call the service-only RPCs.
-- **Draft saves:** `aal1` and outsiders are refused; the version lock works; server-stamped fields
-  are stripped; of two concurrent saves, exactly one wins.
-- **Database:**
-  - a second publisher is impossible;
-  - publication rows require the publisher, `aal2`, a matching digest and an increasing
-    `publishedAt`;
-  - UPDATE and DELETE are refused.
-- **Storage:** public read works; anonymous **and** `aal2` publisher direct writes fail.
-- **Function refusals:**
-  - editor → `publisher_required`;
-  - `aal1` → `mfa_required`;
-  - outsider → `not_admin`;
-  - a signed-out session → 401;
-  - a publisher role that doesn't match the pinned ID → `publisher_not_pinned`.
-- **Global sign-out** revokes every session of the publisher.
-- **Happy paths:**
-  - Staging: recorded, uploaded, verified and publicly readable; MFA evidence stored on the row.
-  - Production: needs the typed confirmation and partner approvals.
-- **Stale reviews** are refused (live changed, draft changed). Of two concurrent publishes, one
-  wins and the other gets `lease_held` / `live_changed`. A foreign lease holder blocks publishing.
-- **Crash after commit:** the publication stays `pending`, the lease is held until expiry, then
-  reconcile re-sends the identical bytes.
-- **Uncertain uploads** (timeout: not stored; lost response: stored) are reconciled before the
-  next publish.
-- **Bypass writer** (service-key upload):
-  - drift blocks publishing;
-  - only the publisher can acknowledge;
-  - the next publication is stamped after the foreign document and reviewed against it.
-- **Foreign document that fails validation:** no timestamp floor.
-- **Far-future catalog that passes validation:**
-  - acknowledgement is refused;
-  - publishing is blocked as `incident_future_timestamp`;
-  - reconcile leaves it untouched;
-  - the incident is audited.
-- **Rollback** is a new publication (new revision, newer `publishedAt`, `rollback_of` set).
+### MFA: what the database verifies vs evidence from the function
+
+| Guarantee | Database verifies it independently? |
+|---|---|
+| `aal2` to read admin data or save drafts | **Yes**: PostgREST verifies the JWT; RLS and the RPC read `auth.jwt()` |
+| Catalog Storage writes only by the publisher with `aal2` | **Yes**: the Storage API verifies the JWT; RLS checks it |
+| Production writes need a TOTP within the step-up window | **Yes**: Storage RLS checks the `amr` TOTP timestamp |
+| The session is not signed out or revoked | **No**: only the function's Auth check sees revocation. Database-side checks accept a revoked token until it expires |
+| The pinned publisher ID | **Partly**: the function checks the ID; the database allows a single publisher and checks the role |
+| The publication row's `auth_aal` / `auth_amr` / `published_by` | **No / partly**: evidence written by the function. The trigger checks the supplied values but cannot verify them. The Storage write is the independently verified step |
+
+## Local validation (latest: 28 / 28 pass, 3 consecutive full runs)
+
+**Earlier round:**
+- **Auth:** real TOTP enrollment and verification; sign-ups disabled.
+- **RLS:** anon and `aal1` see nothing; outsiders see nothing.
+- **Clients:** no table writes and no access to the service-only RPCs.
+- **Draft saves:** `save_gear_draft` locking, including concurrent saves.
+- **Database guarantees:** a single publisher; the publication guard (publisher, `aal2`, digest,
+  increasing `publishedAt`); append-only tables.
+- **Function refusals:** editor, `aal1`, outsider, a signed-out session and a non-pinned
+  publisher are all refused.
+- **Publishing:** Staging and Production happy paths, including confirmation and approvals; stale
+  reviews refused; concurrent publishes; lease fencing.
+- **Recovery:** crash after commit; uncertain uploads; bypass drift; a document that fails
+  validation; the far-future incident; rollback; global sign-out.
+
+**This round:**
+- **Storage RLS:** anon, no token, a forged token, a missing prepared version, an `aal1` session
+  with a valid token, and an `aal2` editor with a valid token are all refused. The `aal2` publisher
+  with a live token and a prepared version succeeds once. A second write without re-preparing is
+  refused (compare-and-swap). A released token is refused.
+- **New-style secret key:** the function reports `serviceCredential: secret_key`. The platform
+  accepts `sb_secret_…` in `apikey` alone for REST and RPC, and refuses it as a Bearer token.
+- **Production MFA window expiry (40 s locally):**
+  - the function refuses with `mfa_step_up_required`;
+  - Storage RLS also refuses a direct write with a live lease and a prepared version;
+  - a refresh-token grant keeps the old TOTP time and is still refused;
+  - a new TOTP verification on that session restores access.
+- **Stale publisher paused after its commit:** after its lease expires, B publishes. A's upload is
+  refused by Storage (`storage_write_rejected`), A cannot record any status, Storage serves B, the
+  head is B, and A's row was finalized by B's reconcile (`recorded` → `verified`).
+- **Stale publisher paused before recording:** gets `lease_lost`. No publication row from A, and
+  Storage serves B.
+- **Reconcile racing a writer:** a bypass write during a paused re-send is **not** overwritten
+  (`pending`, "nothing was overwritten"), then shows as drift.
+- **Reconcile after a lost response:** reads back, finds the bytes already stored, and records
+  `verified` with **no new write** (the object version is unchanged).
 
 ## Not implemented or not covered locally yet
 
 - **Not implemented yet:**
   - image uploads (`gear-upload-url`, finalize);
   - the scheduled verifier (`gear-verify`);
-  - wiring the prototype UI to this backend (it still uses `server.mjs`);
+  - wiring the prototype UI to this backend;
   - magic-link sign-in (tests use password sign-in; the local SMTP catcher is off).
-- **Step-up expiry:** the Production 15-minute window is only exercised on the allowed side;
-  testing expiry needs a clock change or a second function configuration.
-- **Key path:** the local function uses the injected legacy `SUPABASE_SERVICE_ROLE_KEY`. The
-  `sb_secret_…` path (`apikey` header only) is coded but not exercised.
+- **Object deleted by a key holder:** if a service-key holder deletes the object after a version
+  was captured, an insert can recreate it. That deletion is itself a bypass and shows up as drift
+  first.
+- **Revocation timing:** session revocation is checked only by the function. Database checks rely
+  on JWT expiry, so keep access tokens short-lived (decision D5).
 
 ## Checks that still need a hosted, non-production environment (plan §12 B)
 
-- Storage origin consistency and read-back timing on the hosted (S3-backed) service. Local
-  Storage serves from a local file backend.
+- Storage origin consistency and read-back timing on the hosted (S3-backed) service.
+- The same Storage RLS behavior on the hosted Storage API version: version compare-and-swap on
+  upsert, `x-metadata` → `user_metadata`, and `auth.jwt()` / `amr` in policies. Locally this is
+  `storage-api v1.72.1`.
 - CDN and `Cache-Control` behavior on public URLs (Smart CDN).
 - Whether hosted logs attribute a Storage write to a specific API key.
-- The default secrets actually injected into hosted functions (`SUPABASE_SECRET_KEYS` format,
-  legacy keys).
-- Asymmetric JWT signing keys, and `verify_jwt` behavior with hosted-issued tokens.
+- The secrets actually injected into hosted functions. Locally the new-style key appears as
+  `SUPABASE_INTERNAL_SECRET_KEY`, not the `SUPABASE_SECRET_KEYS` listed in the hosted docs.
+- Asymmetric JWT signing keys, `verify_jwt` with hosted tokens, and the `amr` contents of
+  hosted-issued tokens.
 - Magic-link email delivery and hosted Auth rate limits.
 - The scheduled verifier on hosted cron.
 - An iOS TestFlight build reading a staging object over the real network.

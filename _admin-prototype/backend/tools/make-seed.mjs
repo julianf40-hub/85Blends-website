@@ -29,6 +29,10 @@ values (gen_random_uuid(), ${q(u.id)}, ${q(u.id)}, jsonb_build_object('sub', ${q
   if (u.role) sql += `insert into public.gear_admins (user_id, role) values (${q(u.id)}, ${q(u.role)});\n`;
   sql += '\n';
 }
+// Local step-up window, kept equal to GEAR_PRODUCTION_STEP_UP_SECONDS in config.toml (40 s, so the
+// expiry test runs quickly). Production would use the migration default of 900 s.
+export const LOCAL_STEP_UP_SECONDS = 40;
+sql += `update public.gear_settings set production_step_up_seconds = ${LOCAL_STEP_UP_SECONDS};\n`;
 sql += `insert into public.gear_catalog_drafts (id, catalog, meta, version) values ('main', ${q(JSON.stringify(draft.catalog))}::jsonb, ${q(JSON.stringify(draft.meta))}::jsonb, 1);\n`;
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
