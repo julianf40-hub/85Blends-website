@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://85blends.app/schemas/recommended-gear/catalog-v1.json",
+  "title": "85Blends Recommended Gear catalog, schema version 1",
+  "description": "Structural contract shared by iOS and Android. Cross-field rules (unique IDs, one rvp_wheels entry, neutral wording, startsAt < expiresAt, bundled wheel IDs, successor ordering) are enforced by tools/remote-gear/validate_catalog.py and by each client. Unknown keys are ignored by clients; unknown brand kinds are skipped.",
+  "type": "object",
+  "required": ["schemaVersion", "revision", "publishedAt", "brands"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "revision": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "publishedAt": { "type": "number", "exclusiveMinimum": 0, "description": "UTC Unix seconds, set by the server at publication." },
+    "brands": {
+      "type": "array",
+      "maxItems": 30,
+      "items": {
+        "type": "object",
+        "required": ["id", "kind"],
+        "properties": {
+          "id": { "$ref": "#/$defs/id" },
+          "kind": { "type": "string" }
+        },
+        "allOf": [
+          { "if": { "properties": { "kind": { "const": "brand" } } }, "then": { "$ref": "#/$defs/brand" } },
+          { "if": { "properties": { "kind": { "const": "rvp_wheels" } } }, "then": { "$ref": "#/$defs/rvpWheels" } }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z0-9-]{1,64}$" },
+    "https": { "type": "string", "format": "uri", "pattern": "^[Hh][Tt][Tt][Pp][Ss]://[^/@\\s]+(/\\S*)?$" },
+    "timestamp": { "type": "number", "exclusiveMinimum": 0 },
+    "shared": {
+      "type": "object",
+      "required": ["name", "tagline", "description", "ctaTitle", "destinationURL"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "tagline": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "description": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "accessibilityDescription": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "ctaTitle": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "destinationURL": { "$ref": "#/$defs/https" },
+        "hidden": { "type": "boolean" },
+        "more": {
+          "type": "object",
+          "properties": { "subtitle": { "type": "string", "minLength": 1, "maxLength": 120 } }
+        }
+      }
+    },
+    "brand": {
+      "allOf": [{ "$ref": "#/$defs/shared" }],
+      "properties": {
+        "logo": {
+          "type": "object",
+          "required": ["url"],
+          "properties": { "url": { "$ref": "#/$defs/https" }, "darkURL": { "$ref": "#/$defs/https" } }
+        },
+        "heroImageURL": { "$ref": "#/$defs/https" },
+        "priceText": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "offer": {
+          "type": "object",
+          "required": ["amountOff", "eligibleProducts", "code", "terms", "disclosure"],
+          "properties": {
+            "amountOff": { "type": "integer", "minimum": 1, "maximum": 10000, "description": "Whole US dollars." },
+            "eligibleProducts": { "type": "string", "minLength": 1, "maxLength": 300 },
+            "code": { "type": "string", "pattern": "^\\S{1,40}$" },
+            "terms": { "type": "string", "minLength": 1, "maxLength": 300 },
+            "disclosure": { "type": "string", "minLength": 1, "maxLength": 300 },
+            "startsAt": { "$ref": "#/$defs/timestamp" },
+            "expiresAt": { "$ref": "#/$defs/timestamp" }
+          }
+        },
+        "homepageURL": false,
+        "configuratorURL": false,
+        "footnote": false,
+        "wheels": false
+      }
+    },
+    "rvpWheels": {
+      "allOf": [{ "$ref": "#/$defs/shared" }],
+      "required": ["homepageURL", "configuratorURL"],
+      "properties": {
+        "id": { "const": "rvp-supply-oem-beadlocks" },
+        "homepageURL": { "$ref": "#/$defs/https" },
+        "configuratorURL": { "$ref": "#/$defs/https" },
+        "footnote": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "wheels": {
+          "type": "array",
+          "maxItems": 24,
+          "items": {
+            "type": "object",
+            "required": ["id", "displayName", "accessibilityName", "productURL"],
+            "properties": {
+              "id": { "$ref": "#/$defs/id" },
+              "displayName": { "type": "string", "minLength": 1, "maxLength": 60 },
+              "accessibilityName": { "type": "string", "minLength": 1, "maxLength": 500 },
+              "productURL": { "$ref": "#/$defs/https" },
+              "imageURL": { "$ref": "#/$defs/https" },
+              "hidden": { "type": "boolean" }
+            }
+          }
+        },
+        "offer": false,
+        "priceText": false,
+        "heroImageURL": false,
+        "logo": false
+      }
+    }
+  }
+}
