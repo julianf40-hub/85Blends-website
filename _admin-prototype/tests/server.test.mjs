@@ -260,3 +260,66 @@ test('an older publication reappearing (late upload or manual re-upload) is drif
   const r = await call('/api/reconcile', { method: 'POST', body: { target: 'staging' } });
   assert.equal(r.data.state, 'drift');
 });
+
+test('HEIF/HEIC uploads are refused until server-side decoding exists', async () => {
+  for (const contentType of ['image/heic', 'image/heif']) {
+    const r = await call('/api/uploads/sign', { method: 'POST', body: { brandId: 'northwind-sensors', contentType, byteLength: 1000, sha256: 'b'.repeat(64) } });
+    assert.equal(r.status, 415, contentType);
+  }
+});
+
+test('acknowledging drift never skips validation: an invalid foreign document sets no floor, the next candidate is still validated', async () => {
+  // clear the drift left by the previous test (a valid older document)
+  let drift = await storageOf('staging');
+  assert.equal(drift.state, 'drift');
+  assert.equal((await call('/api/drift/acknowledge', { method: 'POST', body: { target: 'staging', digest: drift.originDigest } })).status, 200);
+  assert.equal((await publish('staging')).status, 200);
+
+  await call('/api/dev/external-write', { method: 'POST', body: { target: 'staging', kind: 'invalid' } });
+  drift = await storageOf('staging');
+  assert.equal(drift.state, 'drift');
+  assert.equal(drift.deviceAcceptable, false);
+  assert.ok(drift.validationError);
+  const ack = await call('/api/drift/acknowledge', { method: 'POST', body: { target: 'staging', digest: drift.originDigest } });
+  assert.equal(ack.status, 200);
+  assert.equal(ack.data.storage.acknowledged, true);
+  // the baseline stays the recorded publication: devices rejected the invalid document
+  assert.equal((await state()).baselines.staging.source, 'recorded');
+  // an invalid candidate is still refused after acknowledgement
+  await saveDraft((w) => { w.catalog.brands[0].destinationURL = 'http://insecure.example'; });
+  const bad = await publish('staging');
+  assert.equal(bad.status, 422);
+  await saveDraft((w) => { w.catalog.brands[0].destinationURL = 'https://example.com/northwind'; });
+  const before = (await state()).live.staging.head.publishedAt;
+  const ok = await publish('staging');
+  assert.equal(ok.status, 200, JSON.stringify(ok.data));
+  assert.equal(ok.data.publishedAt, Math.max(Math.floor(clockMs / 1000), before + 1)); // no floor from the invalid document
+  assert.equal((await storageOf('staging')).state, 'in_sync');
+});
+
+test('a valid acknowledged foreign document becomes the review baseline', async () => {
+  await call('/api/dev/external-write', { method: 'POST', body: { target: 'staging', kind: 'cli' } });
+  const drift = await storageOf('staging');
+  await call('/api/drift/acknowledge', { method: 'POST', body: { target: 'staging', digest: drift.originDigest } });
+  const s = await state();
+  assert.equal(s.baselines.staging.source, 'acknowledged_storage');
+  assert.equal(s.baselines.staging.document.revision, drift.originRevision);
+  const review = await call('/api/review', { method: 'POST', body: { target: 'staging' } });
+  assert.equal(review.data.baseline, 'acknowledged_storage');
+  assert.equal(review.data.diff.counts.added, 1); // the draft restores the card the foreign document dropped
+  assert.equal((await publish('staging')).status, 200);
+});
+
+test('a far-future foreign timestamp is refused at acknowledgement and publishing stays blocked', async () => {
+  await call('/api/dev/external-write', { method: 'POST', body: { target: 'staging', kind: 'future' } });
+  const drift = await storageOf('staging');
+  assert.equal(drift.deviceAcceptable, true);
+  assert.ok(drift.originPublishedAt > Math.floor(clockMs / 1000) + 300);
+  const ack = await call('/api/drift/acknowledge', { method: 'POST', body: { target: 'staging', digest: drift.originDigest } });
+  assert.equal(ack.status, 409);
+  assert.equal(ack.data.error, 'drift_future_timestamp');
+  assert.equal((await storageOf('staging')).acknowledged, false);
+  const blocked = await publish('staging');
+  assert.equal(blocked.status, 409);
+  assert.equal(blocked.data.error, 'storage_drift');
+});

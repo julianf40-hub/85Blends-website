@@ -11,7 +11,11 @@ node _admin-prototype/server.mjs --reset    # start again from the fictional see
 node --test _admin-prototype/tests/*.test.mjs
 node _admin-prototype/tools/parity.mjs /path/to/E85-Blends-App   # JS port vs Python reference
 _admin-prototype/tools/verify-pages-exclusion.sh                  # reproduce the Pages build; prove exclusion
+node _admin-prototype/tools/ui-regression.cjs                     # browser checks (Playwright), server running
 ```
+
+The live implementation is planned for a separate **private** repository, `85Blends-Admin`
+(not created yet; see `IMPLEMENTATION_PLAN.md`). This folder is for review only.
 
 Node 20+ and a modern browser. No dependencies or build step, like the rest of this repository.
 State (draft, simulated publications, history, uploads, audit log) is written to
@@ -25,7 +29,7 @@ public, so the source is still readable on GitHub. The real admin must be hosted
 1. Choose a **simulated** account. The proposed operating model has one publisher (Julian); the
    optional editor account can draft but not publish. Untick **Simulated MFA (aal2)** to see
    writes refused.
-2. Edit cards: copy, links, logo and product images (upload a PNG/JPEG), price, offer and its
+2. Edit cards: copy, links, logo and product images (PNG/JPEG upload; HEIF/HEIC is disabled), price, offer and its
    window, visibility, order (drag or arrows), More placement and subtitle, and the sponsor's
    links and wheels. Errors appear inline with the same rules the apps apply.
 3. **Preview**: Recommended Gear and More in light/dark/OLED, narrow, accessibility text size, at
@@ -37,8 +41,10 @@ public, so the source is still readable on GitHub. The real admin must be hosted
    also needs every visible card's partner approval, a reviewed summary and a typed
    confirmation. Northwind Sensors starts as `pending`, so Production is blocked until you approve it.
 7. **Failure modes** (*Prototype tools*): crash after the database commit, upload timeout,
-   lost upload response, a CLI publish that bypasses the lock, an older file re-uploaded. See the
-   Storage line in each publish panel, **Reconcile now** and **Acknowledge drift**.
+   lost upload response, a CLI publish that bypasses the lock, an older file re-uploaded, an
+   invalid file, and a far-future file. See the Storage line in each publish panel, **Reconcile
+   now** and **Acknowledge drift**. Acknowledgement validates the Storage document first and
+   refuses a far-future `publishedAt`.
 8. **History**: every simulated publication with its Storage status, and rollback as a new publication.
 9. **JSON**: the exact document layout the publisher would write.
 

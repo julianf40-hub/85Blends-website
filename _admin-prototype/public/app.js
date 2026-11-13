@@ -98,10 +98,27 @@ async function loadState({ keepWorking = false } = {}) {
     if (error.status === 401 || error.status === 403) return renderSignedOut(error.message);
     throw error;
   }
-  S.base = clone(S.server.draft);
-  if (!keepWorking) S.working = { catalog: clone(S.base.catalog), meta: clone(S.base.meta) };
+  const fresh = S.server.draft;
+  const retainEdits = keepWorking && S.base && S.working && isDirty();
+  if (retainEdits && fresh.version !== S.base.version) {
+    // Keep the base the edits were made on. Advancing it would make the next save send the newer
+    // version in If-Match and silently overwrite the other session's changes (PR #7 review).
+    S.pendingRemote = clone(fresh);
+  } else {
+    S.base = clone(fresh);
+    if (!retainEdits) S.working = { catalog: clone(S.base.catalog), meta: clone(S.base.meta) };
+    S.pendingRemote = null;
+  }
   S.selected = Math.min(S.selected, Math.max(0, brands().length - 1));
   renderAll();
+  if (S.pendingRemote) showRemoteNotice(S.pendingRemote);
+}
+
+function showRemoteNotice(draft) {
+  const notice = $('#remote-notice');
+  notice.hidden = false;
+  notice.innerHTML = `<strong>${e(draft.updatedBy)}</strong> saved draft version ${draft.version} while you have unsaved edits based on version ${S.base.version}. Saving will ask you to resolve the conflict.
+    <button type="button" data-action="resolve-remote">Review now</button>`;
 }
 
 async function poll() {
@@ -120,11 +137,8 @@ async function poll() {
     return renderAll();
   }
   if (draftMoved) {
-    const notice = $('#remote-notice');
-    notice.hidden = false;
-    notice.innerHTML = `<strong>${e(fresh.draft.updatedBy)}</strong> saved draft version ${fresh.draft.version} while you have unsaved edits. Saving will ask you to resolve the conflict.
-      <button type="button" data-action="resolve-remote">Review now</button>`;
     S.pendingRemote = fresh.draft;
+    showRemoteNotice(fresh.draft);
   }
   if (liveMoved) {
     S.server.live = fresh.live;
@@ -162,7 +176,7 @@ function renderStatus() {
   $('#draft-status').innerHTML = `
     <span class="pill ${dirty ? 'warn' : 'ok'}">${dirty ? 'Unsaved changes' : 'Saved'}</span>
     <span class="muted">Draft v${S.base.version} · ${e(S.base.updatedBy)} · ${e(new Date(S.base.updatedAt).toLocaleString())}</span>
-    <button type="button" class="primary" data-action="save" ${dirty ? '' : 'disabled'} title="Save draft (Ctrl/⌘ S)">Save draft</button>
+    <button type="button" class="primary" data-action="save" ${dirty && !S.saving ? '' : 'disabled'} title="Save draft (Ctrl/⌘ S)">${S.saving ? 'Saving…' : 'Save draft'}</button>
     <button type="button" data-action="discard" ${dirty ? '' : 'disabled'}>Discard</button>
     <details class="devtools"><summary>Prototype tools</summary>
       <button type="button" data-action="dev-other-edit">Simulate a draft save from another tab or device</button>
@@ -173,6 +187,8 @@ function renderStatus() {
       <span class="devtools-label">Writers that bypass the lock (Staging):</span>
       <button type="button" data-action="dev-external" data-target="staging" data-kind="cli">CLI publish (publish_catalog.py --upload)</button>
       <button type="button" data-action="dev-external" data-target="staging" data-kind="older">older file re-uploaded / late upload</button>
+      <button type="button" data-action="dev-external" data-target="staging" data-kind="invalid">invalid file uploaded</button>
+      <button type="button" data-action="dev-external" data-target="staging" data-kind="future">valid file with a far-future publishedAt</button>
       <button type="button" data-action="dev-reset">Reset all prototype data</button>
     </details>`;
 }
@@ -331,7 +347,7 @@ function renderEditor() {
 function brandOnlyFields(i, brand) {
   return `
     <fieldset><legend>Images</legend>
-      <p class="help">PNG/JPEG/HEIF, ≤ 5 MB (aim for ≤ 400 KB), each side ≤ 8,192 px. Uploads get a new content-addressed URL; files are never overwritten.</p>
+      <p class="help">PNG or JPEG, ≤ 5 MB (aim for ≤ 400 KB), each side ≤ 8,192 px. HEIF/HEIC uploads are disabled until server-side decoding and dimension checks exist. Uploads get a new content-addressed URL; files are never overwritten.</p>
       ${imageField(i, 'logo.url', 'Logo (light)', 'Transparent wordmark, about 4:1, legible on white.')}
       ${brand.logo ? imageField(i, 'logo.darkURL', 'Logo (dark / OLED)', 'Use when the light logo is dark.') : ''}
       ${imageField(i, 'heroImageURL', 'Product image', 'No image = no artwork panel on the card.')}
@@ -485,6 +501,8 @@ function diffMarkup(diff, { before = 'Before (live)', after = 'After (draft)' } 
 function sideChanges() {
   const target = S.changesTarget;
   const live = S.server.live[target];
+  const baseline = S.server.baselines?.[target];
+  const acknowledged = baseline?.source === 'acknowledged_storage';
   return `
     <div class="preview-controls">
       <label>Compare draft with <select data-action="changes-target">
@@ -492,8 +510,10 @@ function sideChanges() {
         <option value="staging" ${target === 'staging' ? 'selected' : ''}>Live · Staging</option></select></label>
       ${isDirty() ? '<span class="pill warn">Includes unsaved edits</span>' : ''}
     </div>
-    <p class="muted small">Live ${e(target)}: ${live.head ? `revision <code>${e(live.head.revision)}</code>, published ${e(formatTime(live.head.publishedAt))}` : 'nothing published yet'}.</p>
-    ${diffMarkup(diffCatalogs(liveDoc(target), candidate()))}`;
+    ${acknowledged
+      ? `<p class="info warn small"><strong>Baseline: the acknowledged Storage document</strong> (revision <code>${e(baseline.document.revision)}</code>, ${e(formatTime(baseline.document.publishedAt))}). It replaced the latest recorded publication without going through the publisher and may be on devices, so the next publication is compared with it.</p>`
+      : `<p class="muted small">Live ${e(target)}: ${live.head ? `revision <code>${e(live.head.revision)}</code>, published ${e(formatTime(live.head.publishedAt))}` : 'nothing published yet'}.</p>`}
+    ${diffMarkup(diffCatalogs(acknowledged ? baseline.document : liveDoc(target), candidate()), acknowledged ? { before: 'Before (Storage)', after: 'After (draft)' } : undefined)}`;
 }
 
 function sideChecks() {
@@ -662,17 +682,28 @@ function toast(message, level = 'info') {
 }
 
 async function saveDraft() {
+  if (S.saving) return;
+  // Send a snapshot. Fields stay editable while the request is in flight; anything typed after
+  // this point is NOT in the saved version and must survive the response (PR #7 review).
+  const submitted = clone(S.working);
+  S.saving = true;
+  renderStatus();
   try {
-    const { draft } = await api('/api/draft', { method: 'PUT', headers: { 'If-Match': `"v${S.base.version}"` }, body: S.working });
+    const { draft } = await api('/api/draft', { method: 'PUT', headers: { 'If-Match': `"v${S.base.version}"` }, body: submitted });
+    const editedSince = JSON.stringify(S.working) !== JSON.stringify(submitted);
     S.base = clone(draft);
     S.server.draft = draft;
-    S.working = { catalog: clone(draft.catalog), meta: clone(draft.meta) };
+    S.pendingRemote = null;
+    if (!editedSince) S.working = { catalog: clone(draft.catalog), meta: clone(draft.meta) };
     S.reviews = {};
     S.acknowledged = false;
     S.confirmText = '';
-    toast(`Draft saved · version ${draft.version}`);
-    renderAll();
+    S.saving = false;
+    toast(editedSince ? `Draft saved · version ${draft.version}. Edits made while saving are kept and not yet saved.` : `Draft saved · version ${draft.version}`);
+    if (editedSince) { renderList(); refreshInline(); scheduleSide(); } else renderAll();
   } catch (error) {
+    S.saving = false;
+    renderStatus();
     if (error.status === 409) return showConflict(error.data.current);
     toast(error.message, 'error');
   }
@@ -698,20 +729,18 @@ async function uploadImage(rel) {
   if (!/^[a-z0-9-]{1,64}$/.test(brand.id)) return toast('Give the card a valid ID before uploading images.', 'error');
   const picker = document.createElement('input');
   picker.type = 'file';
-  picker.accept = 'image/png,image/jpeg,image/heic,image/heif';
+  picker.accept = 'image/png,image/jpeg';
   picker.addEventListener('change', async () => {
     const file = picker.files?.[0];
     if (!file) return;
     try {
-      if (!['image/png', 'image/jpeg', 'image/heic', 'image/heif'].includes(file.type)) throw new Error('Images must be PNG, JPEG or HEIF.');
+      if (!['image/png', 'image/jpeg'].includes(file.type)) throw new Error('Images must be PNG or JPEG. HEIF/HEIC is disabled until the server can decode it and check its dimensions.');
       if (file.size > 5_000_000) throw new Error(`Image is ${(file.size / 1e6).toFixed(1)} MB; the limit is 5 MB (aim for 400 KB).`);
-      if (file.type !== 'image/heic' && file.type !== 'image/heif') {
-        const bitmap = await createImageBitmap(file);
-        const { width, height } = bitmap;
-        bitmap.close();
-        if (width > 8192 || height > 8192 || width * height > 40_000_000) throw new Error(`Image is ${width}×${height}; each side must be ≤ 8,192 px and ≤ 40 MP.`);
-        if (Math.max(width, height) > 2400) toast(`Image is ${width}×${height}. About 2,000 px on the longest side is plenty.`, 'warn');
-      }
+      const bitmap = await createImageBitmap(file);
+      const { width, height } = bitmap;
+      bitmap.close();
+      if (width > 8192 || height > 8192 || width * height > 40_000_000) throw new Error(`Image is ${width}×${height}; each side must be ≤ 8,192 px and ≤ 40 MP.`);
+      if (Math.max(width, height) > 2400) toast(`Image is ${width}×${height}. About 2,000 px on the longest side is plenty.`, 'warn');
       const buffer = await file.arrayBuffer();
       const sha = await sha256Hex(buffer);
       const grant = await api('/api/uploads/sign', { method: 'POST', body: { brandId: brand.id, contentType: file.type, byteLength: buffer.byteLength, sha256: sha } });
@@ -899,7 +928,7 @@ document.addEventListener('click', async (event) => {
     case 'ack-drift':
       openDialog(`<h2 id="dialog-title">Acknowledge Storage drift (${e(el.dataset.target)})</h2>
         <p>${e(S.server.storage[el.dataset.target].reason)}.</p>
-        <p>Devices may already hold that document, so it is treated as possibly live: the next publication will be stamped newer than it and must be reviewed against it. Investigate who wrote it before continuing. Reconcile never overwrites drift by itself.</p>
+        <p>The server validates the Storage document first. If it is a valid catalog, devices may already hold it: the next publication must be stamped newer than it and is reviewed against it. If it is invalid, devices ignore it and it is simply superseded. A far-future <code>publishedAt</code> is never accepted here: that is an incident (see the plan). Acknowledging does not skip any check on the next publication. Investigate who wrote it before continuing; Reconcile never overwrites drift by itself.</p>
         <div class="dialog-actions"><button type="button" class="danger" data-action="ack-drift-go" data-target="${e(el.dataset.target)}" data-digest="${e(el.dataset.digest)}">Acknowledge (simulated)</button><button type="button" data-action="dialog-close">Cancel</button></div>`);
       break;
     case 'ack-drift-go':

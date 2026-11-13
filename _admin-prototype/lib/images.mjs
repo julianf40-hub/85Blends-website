@@ -4,7 +4,8 @@
 // ever resolve on the network; the local server serves the same files from /images/<sha>.<ext>.
 
 export const STORAGE_IMAGE_PREFIX = 'https://storage.example.invalid/recommended-gear/images/';
-const STORAGE_PATTERN = /^https:\/\/storage\.example\.invalid\/recommended-gear\/images\/([a-z0-9-]{1,64})\/([a-f0-9]{64}\.(?:png|jpg|heic|heif))$/;
+// PNG and JPEG only: HEIF/HEIC uploads are disabled until server-side decoding exists.
+const STORAGE_PATTERN = /^https:\/\/storage\.example\.invalid\/recommended-gear\/images\/([a-z0-9-]{1,64})\/([a-f0-9]{64}\.(?:png|jpg))$/;
 
 export function storageImageKey(url) {
   const match = STORAGE_PATTERN.exec(String(url ?? ''));

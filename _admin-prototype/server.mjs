@@ -48,7 +48,9 @@ const MAX_IMAGE_SIDE = 8192;
 const MAX_IMAGE_PIXELS = 40_000_000;
 const UPLOAD_TOKEN_TTL_MS = 5 * 60 * 1000;
 const MAX_FUTURE_SKEW_SECONDS = 300;
-const IMAGE_TYPES = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/heic': 'heic', 'image/heif': 'heif' };
+// HEIF/HEIC is deliberately disabled: neither the browser nor this server can decode it to check
+// pixel dimensions. Re-enable only with server-side decoding and dimension validation.
+const IMAGE_TYPES = { 'image/png': 'png', 'image/jpeg': 'jpg' };
 
 class HttpError extends Error {
   constructor(status, code, message, extra = {}) {
@@ -183,8 +185,21 @@ export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock
     });
   }
 
+  // What the next publication is compared with. Normally the latest recorded publication; after
+  // acknowledged drift with a VALID foreign document, that document (devices may hold it).
+  async function reviewBaseline(target) {
+    const storage = await inspectStorage(target);
+    if (storage.state === 'drift' && storage.acknowledged && storage.deviceAcceptable) {
+      const origin = await readOrigin(target);
+      return { source: 'acknowledged_storage', document: JSON.parse(new TextDecoder().decode(origin)), bytes: origin };
+    }
+    const recorded = await live(target);
+    return { source: 'recorded', document: recorded.document, bytes: recorded.bytes };
+  }
+
   async function review(target, catalog, meta, { applyApprovalGate }) {
-    const { head, document: liveDoc } = await live(target);
+    const { head } = await live(target);
+    const { document: liveDoc, source: baselineSource } = await reviewBaseline(target);
     const candidate = { schemaVersion: 1, revision: 'pending-stamp', publishedAt: Math.max(Math.floor(clock() / 1000), (head?.publishedAt ?? 0) + 1), brands: catalog.brands };
     const { errors, warnings } = collectIssues(candidate);
     const images = await imageFindings(catalog, target);
@@ -194,6 +209,7 @@ export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock
       target, live: head, errors: [...errors, ...images.filter((f) => f.level === 'error'), ...approvals],
       warnings: [...warnings, ...images.filter((f) => f.level === 'warning')],
       appNotes: appBehaviourNotes(candidate), diff, summary: summarize(diff), bytes: encodeCatalog(candidate).length,
+      baseline: baselineSource,
     };
   }
 
@@ -257,9 +273,11 @@ export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock
     const known = rows.find((r) => r.digest === originDigest);
     let foreign = null;
     try { foreign = JSON.parse(new TextDecoder().decode(origin)); } catch { /* not JSON */ }
-    const acknowledged = (await driftAcks(target)).some((a) => a.digest === originDigest);
+    const ack = (await driftAcks(target)).find((a) => a.digest === originDigest) ?? null;
+    let validationError = null;
+    try { parseBytes(origin); } catch (error) { validationError = error.message; }
     return {
-      ...base, state: 'drift', acknowledged,
+      ...base, state: 'drift', acknowledged: !!ack, deviceAcceptable: validationError === null, validationError,
       reason: known ? `Storage holds an OLDER recorded publication (${known.revision}): a late upload or a manual re-upload overwrote the latest`
         : 'Storage holds bytes no publication recorded: a writer bypassed the publish lock (CLI, dashboard upload or another tool)',
       originRevision: foreign?.revision ?? null, originPublishedAt: typeof foreign?.publishedAt === 'number' ? foreign.publishedAt : null,
@@ -287,7 +305,8 @@ export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock
       }
       const now = Math.floor(clock() / 1000);
       // An acknowledged foreign document may be on devices: everything after it must be newer.
-      const foreignFloor = storage.state === 'drift' ? storage.originPublishedAt ?? 0 : 0;
+      const foreignOnDevices = storage.state === 'drift' && storage.acknowledged && storage.deviceAcceptable;
+      const foreignFloor = foreignOnDevices ? storage.originPublishedAt ?? 0 : 0;
       const highest = Math.max(head?.publishedAt ?? 0, foreignFloor);
       if (highest > now + MAX_FUTURE_SKEW_SECONDS) {
         throw new HttpError(409, 'live_in_future', `The ${target} publishedAt (${highest}) is more than ${MAX_FUTURE_SKEW_SECONDS} s in the future; resolve the clock problem first`);
@@ -299,10 +318,10 @@ export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock
       const document = { schemaVersion: 1, revision: randomUUID(), publishedAt, brands };
       const bytes = encodeCatalog(document);
       const rows = await history(target);
-      const used = [...rows.map((h) => h.revision), ...(storage.originRevision ? [storage.originRevision] : [])];
+      const used = [...rows.map((h) => h.revision), ...(foreignOnDevices && storage.originRevision ? [storage.originRevision] : [])];
       try {
         parseBytes(bytes);
-        const live = storage.state === 'drift' ? await readOrigin(target) : head ? new TextEncoder().encode(rows.at(-1).document) : null;
+        const live = foreignOnDevices ? await readOrigin(target) : head ? new TextEncoder().encode(rows.at(-1).document) : null;
         if (live) {
           const liveDoc = JSON.parse(new TextDecoder().decode(live));
           if (checkSuccessor(liveDoc, live, document, bytes, used) !== 'newer') throw new CatalogRejected('identical to the live publication');
@@ -375,6 +394,7 @@ export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock
         draft, live: { staging: { head: staging.head, document: staging.document }, production: { head: production.head, document: production.document } },
         publishedDraftVersions: Object.fromEntries(TARGETS.map((t) => [t, all.filter((h) => h.target === t).at(-1)?.draftVersion ?? null])),
         storage: Object.fromEntries(await Promise.all(TARGETS.map(async (t) => [t, await inspectStorage(t)]))),
+        baselines: Object.fromEntries(await Promise.all(TARGETS.map(async (t) => { const b = await reviewBaseline(t); return [t, { source: b.source, document: b.document }]; }))),
         faults: { ...faults },
       });
     }
@@ -443,9 +463,17 @@ export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock
       return send(res, 200, await withPublishLock(async () => {
         const storage = await inspectStorage(body.target);
         if (storage.state !== 'drift' || storage.originDigest !== body.digest) throw new HttpError(409, 'drift_changed', 'Storage changed since you reviewed it; reload');
+        // The foreign document goes through the same validator the apps use. Only a VALID document
+        // can be on devices; only then does its publishedAt become a stamping floor.
+        const now = Math.floor(clock() / 1000);
+        if (storage.deviceAcceptable && storage.originPublishedAt > now + MAX_FUTURE_SKEW_SECONDS) {
+          await audit({ event: 'drift_future_timestamp_refused', target: body.target, user: user.email, digest: body.digest, publishedAt: storage.originPublishedAt });
+          throw new HttpError(409, 'drift_future_timestamp', `The Storage document is a valid catalog stamped ${storage.originPublishedAt}, more than ${MAX_FUTURE_SKEW_SECONDS} s in the future. Devices that accepted it will reject every normal publication until then, and superseding it would push the future timestamp forward. This is an incident, not something to acknowledge: see IMPLEMENTATION_PLAN.md §6.`, { storage });
+        }
         await appendFile(paths.driftAcks, JSON.stringify({ target: body.target, digest: body.digest, revision: storage.originRevision,
-          publishedAt: storage.originPublishedAt, by: user.email, at: new Date(clock()).toISOString() }) + '\n');
-        await audit({ event: 'drift_acknowledged', target: body.target, user: user.email, digest: body.digest, revision: storage.originRevision });
+          publishedAt: storage.originPublishedAt, deviceAcceptable: storage.deviceAcceptable, validationError: storage.validationError,
+          by: user.email, at: new Date(clock()).toISOString() }) + '\n');
+        await audit({ event: 'drift_acknowledged', target: body.target, user: user.email, digest: body.digest, revision: storage.originRevision, deviceAcceptable: storage.deviceAcceptable });
         return { acknowledged: true, storage: await inspectStorage(body.target) };
       }));
     }
@@ -461,7 +489,7 @@ export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock
       requireWrite(user);
       const body = await readJSONBody(req);
       const ext = IMAGE_TYPES[body.contentType];
-      if (!ext) throw new HttpError(415, 'bad_type', 'Images must be PNG, JPEG or HEIF');
+      if (!ext) throw new HttpError(415, 'bad_type', 'Images must be PNG or JPEG. HEIF/HEIC is disabled until server-side decoding and dimension checks exist');
       if (!Number.isInteger(body.byteLength) || body.byteLength < 1 || body.byteLength > MAX_IMAGE_BYTES) throw new HttpError(413, 'too_large', 'Images must be at most 5 MB (aim for 400 KB)');
       if (!/^[a-f0-9]{64}$/.test(String(body.sha256))) throw new HttpError(400, 'bad_digest', 'sha256 required');
       if (!/^[a-z0-9-]{1,64}$/.test(String(body.brandId))) throw new HttpError(400, 'bad_brand', 'brandId required');
@@ -481,8 +509,9 @@ export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock
       const bytes = await readBody(req, MAX_IMAGE_BYTES);
       if (bytes.length !== grant.byteLength || sha256(bytes) !== grant.sha256) throw new HttpError(400, 'digest_mismatch', 'Uploaded bytes do not match the signed size and SHA-256');
       const info = inspectImage(bytes);
-      if (!info || info.type !== grant.contentType.replace('image/heif', 'image/heic')) throw new HttpError(415, 'bad_type', 'File content is not the declared image type');
-      if (info.width && (info.width > MAX_IMAGE_SIDE || info.height > MAX_IMAGE_SIDE || info.width * info.height > MAX_IMAGE_PIXELS)) {
+      if (!info || info.type !== grant.contentType) throw new HttpError(415, 'bad_type', 'File content is not the declared image type');
+      if (!info.width || !info.height) throw new HttpError(422, 'unknown_dimensions', 'Could not read the image dimensions; upload refused');
+      if ((info.width > MAX_IMAGE_SIDE || info.height > MAX_IMAGE_SIDE || info.width * info.height > MAX_IMAGE_PIXELS)) {
         throw new HttpError(422, 'too_many_pixels', `Image is ${info.width}×${info.height}; each side must be ≤ ${MAX_IMAGE_SIDE} px and ≤ 40 MP in total`);
       }
       const target = join(paths.uploads, grant.file);
@@ -524,7 +553,12 @@ export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock
         const now = Math.floor(clock() / 1000);
         bytes = encodeCatalog({ ...base, revision: `staging-${now}-cli-${randomBytes(4).toString('hex')}`, publishedAt: Math.max(now, (base.publishedAt ?? 0) + 1),
           brands: base.brands.filter((b) => b.kind !== 'brand' || b.id !== base.brands.find((x) => x.kind === 'brand')?.id) });
-      } else throw new HttpError(400, 'bad_kind', 'kind must be "older" (needs two publications) or "cli"');
+      } else if (kind === 'invalid') {
+        bytes = new TextEncoder().encode('{"schemaVersion": 1, "revision": "", "brands": "not-a-list"}\n');
+      } else if (kind === 'future') {
+        const base = rows.at(-1) ? JSON.parse(rows.at(-1).document) : { schemaVersion: 1, brands: [] };
+        bytes = encodeCatalog({ ...base, revision: `manual-future-${randomBytes(4).toString('hex')}`, publishedAt: Math.floor(clock() / 1000) + 5 * 86400 });
+      } else throw new HttpError(400, 'bad_kind', 'kind must be "older" (needs two publications), "cli", "invalid" or "future"');
       await writeAtomic(paths.object(target), bytes);
       await audit({ event: 'simulated_external_write', target, kind });
       return send(res, 200, { written: true, digest: sha256(bytes) });
@@ -541,7 +575,7 @@ export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock
 
   async function serveStatic(req, res, url) {
     let pathname = decodeURIComponent(url.pathname);
-    const image = /^\/images\/([a-f0-9]{64}\.(png|jpg|heic|heif))$/.exec(pathname);
+    const image = /^\/images\/([a-f0-9]{64}\.(png|jpg))$/.exec(pathname);
     if (image) {
       const file = existsSync(join(paths.uploads, image[1])) ? join(paths.uploads, image[1]) : join(ROOT, 'data', 'images', image[1]);
       return sendFile(res, file, { immutable: true });
@@ -605,7 +639,7 @@ function send(res, status, body) {
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml',
-  '.heic': 'image/heic', '.heif': 'image/heif' };
+};
 
 async function sendFile(res, file, { immutable = false } = {}) {
   try {
@@ -641,7 +675,7 @@ async function readJSONBody(req) {
   }
 }
 
-/** Sniffs PNG/JPEG/HEIF and reads PNG/JPEG pixel size from the header (no decoding). */
+/** Sniffs PNG/JPEG and reads the pixel size from the header (no decoding). HEIF is not accepted. */
 export function inspectImage(bytes) {
   const b = bytes;
   if (b.length > 24 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) {
@@ -660,9 +694,6 @@ export function inspectImage(bytes) {
       i += 2 + length;
     }
     return { type: 'image/jpeg' };
-  }
-  if (b.length > 12 && String.fromCharCode(...b.slice(4, 8)) === 'ftyp' && ['heic', 'heix', 'mif1', 'msf1', 'heif'].includes(String.fromCharCode(...b.slice(8, 12)))) {
-    return { type: 'image/heic' }; // pixel size checked server-side with a real decoder in production
   }
   return null;
 }

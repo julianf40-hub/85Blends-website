@@ -25,7 +25,7 @@ export const REQUIRES_APP_RELEASE = [
   { area: 'Offer types', detail: 'Percent-off, non-USD, multiple offers per brand, or offers on the sponsor card are not in v1.' },
   { area: 'Independent More order or More-only cards', detail: 'More uses catalog order (sponsor banner first, then Featured Brands). A separate order or More-only entries need a contract and app change.' },
   { area: 'Sections, categories, filtering, search, personalization or per-region targeting', detail: 'Not in v1. Every device receives the same document.' },
-  { area: 'Rich text, HTML, Markdown, emoji styling, video, animated images', detail: 'All copy is plain text. Images are PNG/JPEG/HEIF only.' },
+  { area: 'Rich text, HTML, Markdown, emoji styling, video, animated images', detail: 'All copy is plain text. The apps accept PNG/JPEG/HEIF images; this admin uploads PNG/JPEG only (HEIF disabled until server-side decoding exists).' },
   { area: 'Wheel ring with other than nine wheels', detail: 'The ring is designed for exactly nine. Other counts use the labeled grid automatically.' },
   { area: 'Links into the app or non-https links', detail: 'Destinations must be https; e85blends://, http, mailto and javascript are rejected.' },
   { area: 'Analytics/click tracking parameters', detail: 'Allowed inside an https URL, but any new in-app tracking is app work and a privacy review.' },
