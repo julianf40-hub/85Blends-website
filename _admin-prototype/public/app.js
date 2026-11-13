@@ -669,7 +669,9 @@ function targetPanel(target) {
     <button type="button" class="${production ? 'danger' : 'primary'}" data-action="publish" data-target="${target}" ${ready ? '' : 'disabled'}>
       ${supa() ? 'Publish' : 'Simulate publish'} to ${production ? 'Production' : 'Staging'}${production && supa() ? ' (local)' : ''}</button>
     ${production && supa() ? `<p class="small muted">Production also needs a recent TOTP verification (the step-up window is set server-side). If it has lapsed you are asked for a fresh code; the function and Storage both check it.</p>` : ''}
-    ${result ? `<div class="result ${result.storage === 'verified' ? '' : 'uncertain'}" role="status" data-testid="result-${target}"><strong>${supa() ? 'Local' : 'Simulated'} publication recorded${result.storage === 'verified' ? ' and verified' : ', upload NOT confirmed'}.</strong>
+    ${S.unknown?.[target] ? `<div class="result uncertain" role="status" data-testid="unknown-${target}"><strong>Outcome unknown.</strong> The request may or may not have been committed (${e(S.unknown[target].reason)}). Retrying sends the <em>same operation ID</em>, so it returns the original publication if there was one and never creates a second.
+      <button type="button" data-action="retry-publish" data-target="${target}">Retry (same operation)</button></div>` : ''}
+    ${result ? `<div class="result ${['verified', 'committed'].includes(result.storage) ? '' : 'uncertain'}" role="status" data-testid="result-${target}"><strong>${result.storage === 'committed' ? `Local publication committed${result.replayed ? ' (replayed: an earlier attempt had already committed it)' : ''}` : `${supa() ? 'Local' : 'Simulated'} publication recorded${result.storage === 'verified' ? ' and verified' : ', upload NOT confirmed'}`}.</strong>
       <dl class="kv"><dt>Revision</dt><dd><code>${e(result.revision)}</code></dd><dt>publishedAt</dt><dd>${e(result.publishedAt)} (${e(formatTime(result.publishedAt))})</dd>
       <dt>SHA-256</dt><dd><code>${e(result.digest.slice(0, 16))}…</code> · ${e(result.bytes)} bytes</dd><dt>Storage</dt><dd>${e(result.storage)}</dd><dt>Read-back</dt><dd>${e(result.readBack)}</dd>
       <dt>Object</dt><dd>${e(result.objectPath)}</dd></dl></div>` : ''}
@@ -678,7 +680,7 @@ function targetPanel(target) {
 
 function storageMarkup(target, storage) {
   const label = {
-    in_sync: '✓ origin holds the latest recorded publication', empty: 'nothing published yet', repaired: '✓ repaired by reconcile',
+    in_sync: supa() ? '✓ serving the current publication from the database pointer (gear-catalog endpoint)' : '✓ origin holds the latest recorded publication', empty: 'nothing published yet', repaired: '✓ repaired by reconcile',
     pending: '⚠ latest recorded publication not confirmed in Storage (crash or uncertain upload)',
     drift: storage.futureIncident ? `✗ INCIDENT: Storage holds a valid catalog stamped ${formatTime(storage.originPublishedAt)} (far future). Publishing is blocked and nothing is changed automatically. Report it (alert delivery is an open deployment decision).`
       : storage.acknowledged ? `⚠ drift acknowledged (${storage.passesValidation ? 'passes validation; sets the timestamp floor' : 'fails validation; no timestamp floor'}): the next publication will supersede it`
@@ -694,7 +696,7 @@ function storageMarkup(target, storage) {
 
 function sidePublish() {
   const intro = supa()
-    ? '<p class="info"><strong>Local Supabase stack.</strong> Publishing calls the local gear-publish function: lease, review-digest check, stamp, validate, record, upload with a single-use write grant, origin read-back. It writes only to the local stack\'s Storage; nothing reaches a hosted project, a CDN or any device.</p>'
+    ? '<p class="info"><strong>Local Supabase stack.</strong> Publishing calls the local gear-publish function: review-digest check, stamp, validate, then <strong>one database transaction</strong> records the exact bytes and advances the target\'s pointer, only if nothing changed since your review. Apps read it from the read-only gear-catalog endpoint. Nothing reaches a hosted project, a CDN or any device.</p>'
     : null;
   return `
     ${intro ?? `<p class="info"><strong>Simulated.</strong> Publishing runs the proposed server-side flow (reconcile Storage, lock, stamp, validate, record, upload, origin read-back) but writes only to <code>_admin-prototype/.local-state/</code>. Nothing reaches Supabase, a CDN or any device. Sign-in, roles and MFA are simulated. Use <em>Prototype tools</em> to inject crashes, uncertain uploads and writers that bypass the lock.</p>`}
@@ -852,13 +854,21 @@ function moveItem(list, from, to) {
   return true;
 }
 
-async function publish(target) {
+// Ambiguous failures (no response, gateway or server error): the request may have been committed.
+const ambiguous = (error) => !error.status || error.status >= 500;
+
+async function publish(target, retryBody = null) {
   const review = S.reviews[target];
+  // One operation ID per reviewed publish attempt; a retry reuses it so the server can recognize it.
+  const body = retryBody ?? {
+    target, draftVersion: S.base.version, expectedLiveRevision: review?.live?.revision ?? null,
+    reviewDigest: review?.reviewDigest, confirmation: target === 'production' ? S.confirmText : undefined,
+    operationId: crypto.randomUUID(),
+  };
+  S.unknown ??= {};
   try {
-    const result = await withStepUp(() => B.publish({
-      target, draftVersion: S.base.version, expectedLiveRevision: review?.live?.revision ?? null,
-      reviewDigest: review?.reviewDigest, confirmation: target === 'production' ? S.confirmText : undefined,
-    }));
+    const result = await withStepUp(() => B.publish(body));
+    delete S.unknown[target];
     S.results[target] = result;
     S.reviews = {};
     S.acknowledged = false;
@@ -867,6 +877,12 @@ async function publish(target) {
     await loadState();
   } catch (error) {
     if (error.data?.error === 'session_expired') return fail(error);
+    if (supa() && ambiguous(error)) {
+      S.unknown[target] = { body, reason: error.message };
+      toast('Outcome unknown. Retry with the same operation: it cannot create a second publication.', 'warn');
+      return renderSide();
+    }
+    delete S.unknown[target];
     toast(error.message, 'error');
     if (error.status === 409 || error.status === 500) { S.reviews = {}; await loadState({ keepWorking: true }); }
     else if (error.data?.errors) { S.reviews[target] = { ...review, errors: error.data.errors }; renderSide(); }
@@ -882,7 +898,7 @@ async function rollbackDialog(id) {
   S.rollbackReview = null;
   if (supa()) {
     // The server reviews the rollback (baseline, source, approvals) and binds the publish to it.
-    try { S.rollbackReview = await B.reviewRollback(target, id); } catch (error) { return fail(error); }
+    try { S.rollbackReview = { ...(await B.reviewRollback(target, id)), operationId: crypto.randomUUID() }; } catch (error) { return fail(error); }
     diff = S.rollbackReview.diff;
     errors = S.rollbackReview.errors;
   }
@@ -902,7 +918,7 @@ async function rollback(id) {
     const confirmation = $('#rollback-confirm')?.value;
     const result = await withStepUp(() => B.rollback({
       target: entry.target, publicationId: id, expectedLiveRevision: S.rollbackReview?.live?.revision ?? S.server.live[entry.target].head?.revision ?? null,
-      reviewDigest: S.rollbackReview?.reviewDigest, confirmation,
+      reviewDigest: S.rollbackReview?.reviewDigest, confirmation, operationId: S.rollbackReview?.operationId,
     }));
     closeDialog();
     toast(`${supa() ? 'Rollback' : 'Simulated rollback'} recorded as revision ${result.revision}`);
@@ -1015,6 +1031,7 @@ document.addEventListener('click', async (event) => {
       break;
     }
     case 'publish': publish(el.dataset.target); break;
+    case 'retry-publish': publish(el.dataset.target, S.unknown?.[el.dataset.target]?.body); break;
     case 'history-view': {
       const entry = S.history.find((h) => h.id === el.dataset.id);
       openDialog(`<h2 id="dialog-title">${e(entry.target)} · ${e(entry.revision)}</h2><pre class="json">${e(entry.document)}</pre>

@@ -1,7 +1,8 @@
 // Shared helpers for the local-backend integration tests (fictional data, local stack only).
 import assert from 'node:assert/strict';
 import { execSync } from 'node:child_process';
-import { createHmac } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
+import { readdirSync, readFileSync } from 'node:fs';
 import { USERS, LOCAL_TEST_PASSWORD } from '../tools/make-seed.mjs';
 
 export const DIR = new URL('..', import.meta.url).pathname;
@@ -59,7 +60,10 @@ export async function mfa(who) {
   return verify.data.access_token;
 }
 export const claims = (jwt) => JSON.parse(Buffer.from(jwt.split('.')[1], 'base64url').toString());
-export const fn = (token, body, headers = {}) => http('/functions/v1/gear-publish', { method: 'POST', token, body, headers });
+// The publication function under test: gear-publish (database pointer, D10 option 2), or the superseded
+// Storage path (gear-legacy-storage-demo) for tests/legacy-storage/.
+export const FN = { name: 'gear-publish' };
+export const fn = (token, body, headers = {}) => http(`/functions/v1/${FN.name}`, { method: 'POST', token, body, headers });
 export const draftRow = () => JSON.parse(sql(`select row_to_json(d) from public.gear_catalog_drafts d`));
 export const head = (target) => JSON.parse(sql(`select row_to_json(h) from public.gear_publication_head h where target = '${target}'`));
 export const objectPath = (t) => (t === 'staging' ? 'staging/catalog-v1.json' : 'catalog-v1.json');
@@ -68,7 +72,7 @@ export const serviceWrite = (t, text) => http(`/storage/v1/object/recommended-ge
 export async function publish(token, target, extra = {}, headers = {}) {
   const reviewed = await review(token, target, extra.rollbackOf ? { rollbackOf: extra.rollbackOf } : {});
   return fn(token, { action: 'publish', target, draftVersion: draftRow().version, expectedLiveRevision: head(target).revision,
-    confirmation: target === 'production' ? 'PUBLISH PRODUCTION' : undefined, reviewDigest: reviewed.data?.reviewDigest, ...extra }, headers);
+    confirmation: target === 'production' ? 'PUBLISH PRODUCTION' : undefined, reviewDigest: reviewed.data?.reviewDigest, operationId: randomUUID(), ...extra }, headers);
 }
 export async function saveDraft(token, mutate) {
   const d = draftRow();
@@ -96,10 +100,19 @@ export async function grantFor(target, ttl = 30, userId = USERS.publisher.id) {
 }
 
 
-export function resetLocalDatabase() {
+export function resetLocalDatabase({ legacyStoragePath = false } = {}) {
   Object.assign(ENV, JSON.parse(sh('supabase status -o json')));
   sh('supabase db reset');
   sh('node tools/seed-images.mjs');
+  FN.name = 'gear-publish';
+  if (legacyStoragePath) {
+    // Restores the superseded Storage publication path on the LOCAL stack only (not a migration).
+    const dir = new URL('../supabase/experimental/legacy-storage-path/', import.meta.url);
+    for (const f of readdirSync(dir).filter((n) => n.endsWith('.sql')).sort()) {
+      execSync('docker exec -i supabase_db_gear-admin-local psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -q', { input: readFileSync(new URL(f, dir)), encoding: 'utf8' });
+    }
+    FN.name = 'gear-legacy-storage-demo';
+  }
 }
 // The review step the UI performs before publishing; publish must send its digest back.
 export const review = (token, target, extra = {}) => fn(token, { action: 'review', target, ...extra });

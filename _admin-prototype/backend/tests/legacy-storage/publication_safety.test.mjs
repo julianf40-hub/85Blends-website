@@ -4,11 +4,11 @@ import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { execFileSync } from 'node:child_process';
-import { ENV, sql, sleep, mfa, fn, publish, saveDraft, publicRead, grantFor, latestDocument, objectPath, resetLocalDatabase } from './helpers.mjs';
+import { ENV, sql, sleep, mfa, fn, publish, saveDraft, publicRead, grantFor, latestDocument, objectPath, resetLocalDatabase } from '../helpers.mjs';
 
 let publisher;
 before(async () => {
-  resetLocalDatabase();
+  resetLocalDatabase({ legacyStoragePath: true });
   publisher = await mfa('publisher');
 });
 

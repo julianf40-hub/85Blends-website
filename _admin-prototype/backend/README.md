@@ -13,8 +13,9 @@ Requires Docker and the Supabase CLI (tested with 2.117.0).
 ```sh
 cd _admin-prototype/backend
 tools/start-local.sh            # starts the stack; hands gear-publish the local sb_secret_ key via env
-node --test --test-concurrency=1 tests/*.test.mjs   # resets the local DB first; ~4–5 minutes
-node tools/ui-local-supabase.mjs [shots-dir]          # browser run of the admin UI (resets the DB; ~2 minutes)
+node --test --test-concurrency=1 tests/*.test.mjs                 # current design (D10 option 2); resets the DB; ~4 min
+node --test --test-concurrency=1 tests/legacy-storage/*.test.mjs  # superseded Storage path, evidence only; ~6 min
+GEAR_LOCAL_JWT_EXPIRY=60 tools/start-local.sh && GEAR_LOCAL_JWT_EXPIRY=60 node tools/ui-local-supabase.mjs [shots-dir]
 tools/serve-ui.sh               # or use the UI yourself: http://127.0.0.1:4174 (local-supabase mode)
 supabase stop
 ```
@@ -38,6 +39,39 @@ has lapsed. Simulated mode (`node server.mjs`) is unchanged.
 - The local keys are Supabase's standard local demo keys. They are never committed
   (`supabase/.temp` is ignored), and the tests read them from `supabase status`.
 
+## Current design: the database is the publication channel (decision D10, option 2)
+
+Plan §6.2 has the full description and the re-run scenario table.
+
+- **Write:**
+  - `gear-publish` reviews, stamps and validates the exact bytes, and stores them as a private
+    intent keyed by the client's `operationId`;
+  - `gear_commit_publication(operationId)`, called with the publisher's own JWT, checks in one
+    transaction: role, aal2, Production step-up, pointer compare-and-swap and draft version. It
+    then records the bytes and digest and advances `current_publication_id`;
+  - retries with the same `operationId` return the original (`replayed: true`).
+- **Read:** `GET /functions/v1/gear-catalog/{production|staging}`. It is public and read-only,
+  serves the exact bytes, uses the SHA-256 ETag with 304, and sends
+  `Cache-Control: public, max-age=60` (Production) or `no-cache` (Staging).
+- **Not a channel any more:** the Storage catalog objects. Their write policies and every
+  Storage-path RPC are revoked (`migrations/20261114100000_gear_db_pointer.sql`).
+- **Images:** unchanged; still immutable Storage objects.
+- **Tests:** `tests/db_pointer.test.mjs` (scenarios, read endpoint, cache, client model, no second
+  channel), `tests/foundation.test.mjs`, `tests/review_images.test.mjs`.
+- **Client model:** `tests/client-model.mjs` is a line-referenced model of the iOS `accept` rule.
+- **iOS and Android:** `../docs/proposals/ios-catalog-endpoint.md`.
+
+### Superseded: the Storage publication path (experimental evidence only)
+
+Everything below this point, through "Publication-safety review", describes the earlier design.
+It is kept so its failures stay reproducible, and it is **excluded from the migration and
+deployment path**:
+- `supabase/experimental/legacy-storage-path/`: the catalog write policies, RPC grants and the
+  commit-guard trigger, applied by the legacy tests as the local superuser;
+- `supabase/functions/gear-legacy-storage-demo/`: refuses every request unless
+  `GEAR_ALLOW_TEST_FAULTS=local-only`;
+- `tests/legacy-storage/`.
+
 ## What is implemented
 
 | Piece | File |
@@ -47,9 +81,12 @@ has lapsed. Simulated mode (`node server.mjs`) is unchanged.
 | Fictional users (publisher, editor, outsider, spare), admin rows, draft, local step-up window | `supabase/seed.sql` (generated) |
 | Single-use write grants, hidden lease token, catalog write policies, JSON guard, `refused` status | `supabase/migrations/20261113200000_gear_write_grants.sql` |
 | Image grants (insert-only), image listings, lease overview for the verifier | `supabase/migrations/20261113210000_gear_images_verifier.sql` |
-| `gear-publish` Edge Function (review, publish, rollback, reconcile, acknowledge, inspect, verify, upload_image) | `supabase/functions/gear-publish/index.ts` |
+| **Database pointer, intents, commit RPC, read RPC; Storage catalog writes and Storage-path RPCs revoked** | `supabase/migrations/20261114100000_gear_db_pointer.sql` |
+| `gear-publish` Edge Function (review, publish, rollback, inspect, verify, upload_image) | `supabase/functions/gear-publish/index.ts` |
+| `gear-catalog` read-only endpoint (public) | `supabase/functions/gear-catalog/index.ts` |
+| Superseded Storage path (local evidence only) | `supabase/functions/gear-legacy-storage-demo/`, `supabase/experimental/legacy-storage-path/` |
 | Shared contract modules (byte-identical to `../lib/`) | `supabase/functions/_shared/{validator,diff}.mjs` |
-| Integration tests against the running stack | `tests/backend.test.mjs`, `tests/bypass.test.mjs`, `tests/review_images_verify.test.mjs` |
+| Integration tests against the running stack | Current: `tests/db_pointer.test.mjs`, `tests/foundation.test.mjs`, `tests/review_images.test.mjs`. Superseded: `tests/legacy-storage/*` |
 | UI adapter (simulated / local-supabase) and browser run | `../public/backend.js`, `tools/serve-ui.sh`, `tools/ui-local-supabase.mjs` |
 
 ### Publishing: lease, then Storage compare-and-swap
@@ -184,7 +221,20 @@ The final version decides on the proposed row in the INSERT phase of the upsert.
 | The pinned publisher ID | **Partly**: the function checks the ID; the database allows a single publisher and checks the role |
 | The publication row's `auth_aal` / `auth_amr` / `published_by` | **No / partly**: evidence written by the function. The trigger checks the supplied values but cannot verify them. The Storage write is the independently verified step |
 
-## Local validation (latest: 54 / 54 integration tests; browser run 18 / 18)
+## Local validation
+
+**Current design (D10 option 2), 2026-11-14:**
+- `tests/*.test.mjs` → **34 / 34** (18 database-pointer, 9 foundation, 7 review and images).
+- The browser run (60 s tokens) → **19 / 19**, 3 consecutive runs. It replaces reconcile and drift with:
+  - a lost response: the server commits, the browser gets a 502, and the UI retries with the
+    same operation and gets the replayed original;
+  - a key-holder write to the old Storage object that is never served;
+  - a guest reading Production without a session.
+- Legacy evidence `tests/legacy-storage/*.test.mjs` → **54 / 54** (unchanged behavior).
+
+### Earlier rounds (Storage path)
+
+Latest Storage-path round: 54 / 54 integration tests; browser run 18 / 18.
 
 - **Integration:** `node --test --test-concurrency=1 tests/*.test.mjs` → 54 / 54. This is the
   default 3600 s token lifetime; the suite holds tokens for minutes.
@@ -286,9 +336,14 @@ The final version decides on the proposed row in the INSERT phase of the upsert.
   - image retention or deletion (D9; unreferenced images are only reported);
   - HEIF/HEIC (stays disabled, D6);
   - magic-link sign-in (password + TOTP locally; the local SMTP catcher is off).
-- **Commit ordering depends on the candidate commit guard** (plan §6.1, D10). Without it, a
-  started upload can commit after its lease expired and overwrite a newer verified publication
-  (PS1b), and one grant can be used twice concurrently (PS2). Its hosted viability is unverified.
+- **Commit ordering (D10) is resolved by the database pointer**: it is a database transaction, not a
+  Storage write. The Storage path's failures (PS1b, PS2) remain reproducible in
+  `tests/legacy-storage/` as evidence.
+- **Installed iOS builds that read the Storage paths** never see database publications (no
+  mirror). Ship the endpoint change before the first Production publication
+  (`../docs/proposals/ios-catalog-endpoint.md`).
+- **Abandoned intents** (reviews never committed) stay in `private.gear_publish_intents` and expire
+  after 10 minutes. The verifier reports them; there is no cleanup job yet.
 - **Signed catalogs (D8)** would authenticate content, but would **not** stop an older, validly
   signed publication from overwriting a newer object. Clients holding the newer one reject it by
   `publishedAt`; new installs and cold caches would accept it.
@@ -312,7 +367,14 @@ The final version decides on the proposed row in the INSERT phase of the upsert.
   hosted-issued tokens.
 - Magic-link email delivery and hosted Auth rate limits.
 - The scheduled verifier on hosted cron.
-- **Commit guard viability (D10):**
+- **gear-catalog endpoint:**
+  - anonymous access to a `verify_jwt = false` function with no apikey;
+  - compression and ETag weakening;
+  - CDN behavior;
+  - invocation limits.
+- **gear-publish:** whether hosted functions keep running after a client disconnect (they did
+  locally; the design is safe either way).
+- (Superseded, only if the Storage path is ever revisited) **Commit guard viability (D10):**
   - whether a project may create, replace and later remove a trigger on `storage.objects`;
   - whether hosted Storage commits through the same upsert;
   - whether the hosted eTag is the MD5 of the bytes (not for S3 multipart or some encryption

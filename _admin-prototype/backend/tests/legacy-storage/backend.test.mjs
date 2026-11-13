@@ -7,14 +7,14 @@
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { USERS, LOCAL_TEST_PASSWORD, LOCAL_STEP_UP_SECONDS } from '../tools/make-seed.mjs';
+import { USERS, LOCAL_TEST_PASSWORD, LOCAL_STEP_UP_SECONDS } from '../../tools/make-seed.mjs';
 
-import { review, grantFor, latestDocument, latestPublicationId, DIR, ENV, base32, claims, directWrite, draftRow, factors, fn, head, http, mfa, objectPath, publicRead, publish, resetLocalDatabase, saveDraft, serviceWrite, sessions, sh, signIn, sleep, sql, sqlError, svc, totp } from './helpers.mjs';
+import { review, grantFor, latestDocument, latestPublicationId, DIR, ENV, base32, claims, directWrite, draftRow, factors, fn, head, http, mfa, objectPath, publicRead, publish, resetLocalDatabase, saveDraft, serviceWrite, sessions, sh, signIn, sleep, sql, sqlError, svc, totp } from '../helpers.mjs';
 
 let publisher; // aal2 session of the pinned publisher
 
 before(async () => {
-  resetLocalDatabase();
+  resetLocalDatabase({ legacyStoragePath: true });
   await sleep(3000); // let PostgREST reload its schema cache after the reset
   publisher = await mfa('publisher');
 });
@@ -22,7 +22,7 @@ before(async () => {
 // ---------------------------------------------------------------- shared contract
 test('shared modules in the function are byte-identical to the prototype lib', () => {
   for (const f of ['validator.mjs', 'diff.mjs']) {
-    assert.ok(readFileSync(new URL(`../supabase/functions/_shared/${f}`, import.meta.url)).equals(readFileSync(new URL(`../../lib/${f}`, import.meta.url))), f);
+    assert.ok(readFileSync(new URL(`../../supabase/functions/_shared/${f}`, import.meta.url)).equals(readFileSync(new URL(`../../../lib/${f}`, import.meta.url))), f);
   }
 });
 

@@ -434,3 +434,14 @@ enabled = true
 [functions.gear-publish]
 enabled = true
 verify_jwt = true
+
+# Read-only catalog endpoint for the apps: GET /functions/v1/gear-catalog/{production|staging}.
+# Public (guests and app users, no sign-in), so the gateway must not require a JWT.
+[functions.gear-catalog]
+enabled = true
+verify_jwt = false
+
+# Superseded Storage publication path: LOCAL EXPERIMENTAL EVIDENCE ONLY, never deployed (D10).
+[functions.gear-legacy-storage-demo]
+enabled = true
+verify_jwt = true

@@ -186,6 +186,13 @@ older, validly signed publication from overwriting a newer object (§6.1).
 
 ## 6. Publishing across the database and Storage
 
+> **Superseded by §6.2 (decision D10, option 2, 2026-11-14).** The current design publishes through
+> one database transaction and a read-only endpoint; nothing writes the catalog to Storage. The text
+> below and §6.1 describe the earlier Storage path and the blocker that ruled it out. That path is
+> kept only as local experimental evidence (`backend/supabase/experimental/legacy-storage-path/`,
+> `backend/supabase/functions/gear-legacy-storage-demo/`, `backend/tests/legacy-storage/`) and is
+> excluded from the migration and deployment path.
+
 A database lock or fencing token alone does **not** stop a stale process from overwriting Storage.
 The local backend shows this with a negative control. When uploads used the service key (which
 bypasses Storage RLS):
@@ -285,9 +292,101 @@ gateway streams request bodies; local Kong buffers. That must not be relied on e
    existing v1 rule), but new installs and cold caches accept it. This limits device impact
    only; the served bytes are still wrong.
 
-Recommendation: decide this before hosted testing (new decision D10). Option 1 is the smallest
-change if the hosted checks pass. Option 2 removes the dependency on Storage internals at the
-cost of an app change.
+**Decided (2026-11-14): option 2**, implemented locally in §6.2. The commit-guard trigger (option 1)
+remains experimental evidence only and is not in the migration path.
+
+### 6.2 Current design: the database is the publication channel (D10, option 2; local)
+
+**Write path:** one application-owned database transaction.
+1. The admin reviews (`review`): the server returns a `reviewDigest`. It covers the target, the
+   draft version or rollback source, the current publication (id and digest) as the baseline,
+   the candidate brands, and (Production) the approvals.
+2. Publish sends that digest and an `operationId` (a UUID the client keeps for retries).
+   `gear-publish` then:
+   - checks the caller (Auth session, aal2, publisher, pinned ID, Production step-up);
+   - recomputes the review (any difference → `review_stale`);
+   - stamps `publishedAt = max(now, current + 1)` (±300 s guard), validates and successor-checks
+     the exact bytes;
+   - stores them as a private **intent** (`private.gear_publish_intents`, service-written),
+     together with their SHA-256, the reviewed draft version (or rollback source) and the
+     pointer the review saw.
+3. `gear_commit_publication(operationId)` runs **with the publisher's own JWT**. In one
+   transaction, under a row lock on the target's head, the database itself checks:
+   - publisher and aal2 (`private.gear_role()`); for Production, a TOTP `amr` within the step-up
+     window;
+   - the intent belongs to this user and has not expired;
+   - **the pointer is still the reviewed one (CAS)** and **the draft is still the reviewed
+     version**.
+
+   It then inserts the publication (exact bytes and digest; MFA evidence taken from the JWT) and
+   advances `gear_publication_head.current_publication_id`.
+4. **Idempotency:**
+   - a request with a known `operationId` never prepares another publication. If committed, it
+     returns the original (`replayed: true`); if not yet, it commits that same intent;
+   - concurrent duplicates resolve to one intent and one commit; the intent row is locked;
+   - reusing an `operationId` for a different request is `operation_conflict`.
+5. **Rollback** is the same flow with `rollbackOf`: a new revision with a newer `publishedAt`,
+   bound to the reviewed source and baseline.
+
+The Storage catalog write policies and every Storage-path RPC (lease, record, grants, drift
+acknowledgement) are removed from client and service roles by migration `20261114100000`. So the
+commit RPC is the only way to create a publication or move the pointer, short of a direct-SQL
+superuser. Images remain immutable, content-addressed Storage objects (unchanged).
+
+**Read path:** `GET /functions/v1/gear-catalog/{production|staging}` (`verify_jwt = false`).
+- Guests and app users read it with no credentials. It uses only the anon-executable
+  `gear_current_catalog(target)`: one statement, so bytes, digest, revision and `publishedAt`
+  always belong to one publication.
+- It returns the exact bytes (the v1 JSON contract, unchanged), after checking them against
+  their digest.
+- Staging and Production are separate URLs with separate client state.
+
+**Cache behavior:**
+
+| | Production | Staging |
+|---|---|---|
+| `Cache-Control` | `public, max-age=60` | `no-cache` |
+| `ETag` | `"<sha256>"` (gateways may weaken it to `W/"…"`; both forms revalidate) | same |
+| `If-None-Match` | 304 | 304 |
+| Nothing published | 404 | 404 |
+| Errors | 503, `no-store` | same |
+
+The app already sends `If-None-Match`, handles 200 and 304, never clears on another status, and
+accepts only a strictly newer `publishedAt`. So a delayed or cached older response cannot
+regress a client that has a newer one. Remaining exposure: a device that never received the
+newer publication can be served an older complete one by a cache for at most `max-age`
+(Production 60 s).
+
+**Re-run scenarios** (`backend/tests/db_pointer.test.mjs`; evidence lines in the test output):
+
+| Scenario | Result |
+|---|---|
+| Concurrency: 5 publishers from one reviewed state | 1 × 200; 4 × 409 (`live_changed`, `review_stale`); the pointer advanced once |
+| Stale writer: A prepared, delayed 4 s; B commits | A 409 `live_changed` from the database CAS; the pointer and the endpoint serve B; A's intent stays uncommitted |
+| Client gives up mid-request (abort) | Measured: the server **still committed** after the client aborted. The retry with the same `operationId` replayed it; exactly one publication. Asserted to hold either way |
+| Stale writer whose client gave up, then B commits | The newer head stays; retrying A is 409 |
+| Duplicates: one operation sent 5× at once | 5 × 200, 1 original + 4 replays, one revision, one publication |
+| Lost response (commit succeeded, 502 returned) | The retry returns the original (`replayed: true`), no second publication. Reusing the ID for another request: `operation_conflict` |
+| Retry while the original is in flight | One publication; both answers name it |
+| Rollback | New revision, newer `publishedAt`, old content served. A stale rollback is refused; a retry replays |
+| Draft saved between validation and commit | The database refuses (`draft_changed`); nothing committed |
+| Commit RPC called directly | Unknown operation, editor, aal1 and anon refused; intents and their RPCs are service-only |
+| Production step-up at commit | The database refuses a session older than the window; a fresh TOTP commits |
+| Old Storage object | No client can write it. A key-holder write is never served; the verifier reports it as `legacy_storage_object` |
+| Delayed responses vs a client (model of iOS `accept`) | v2 accepted, delayed v1 `rejected(stale)`; 304/404/503 change nothing; the rollback v3 is accepted |
+| Readers during 4 publishes (137 responses) | Every body was exactly a recorded publication and matched its ETag; a sequential reader never went backwards |
+
+**The old-design demonstrations stay reproducible** in `backend/tests/legacy-storage/`
+(54/54, including the PS1b and PS2 hazards asserted without the guard).
+
+**App impact:**
+- **iOS:** the smallest change is the two paths in `GearCatalogSource.objectPath` plus their test
+  literals. Installed builds that read the Storage paths keep bundled or last-accepted content
+  and never see new publications. Ship the change before the first Production publication. No
+  Storage mirror is maintained.
+- **Android:** use the endpoint from the start, with the same acceptance rules.
+
+Details: `docs/proposals/ios-catalog-endpoint.md`.
 
 4. **Stamp** `max(now, head + 1, floor)` with a ±300 s guard. **Record** history with status
    `recorded`. **Upload, read back**, and record `verified`, `uncertain` or `conflict`.
@@ -510,12 +609,14 @@ TOTP. Not implemented: magic-link sign-in, scheduling the verifier, and image re
   `x-metadata` in `user_metadata`, and `amr` in policies;
 - magic-link email delivery;
 - scheduled verifier execution (cron);
-- **D10 commit guard:** whether a project can create, replace and remove a trigger on
-  `storage.objects`; that hosted Storage commits through the same upsert; that the hosted eTag is
-  the MD5 of the bytes; and that TUS and S3-protocol uploads hit the trigger. Rerun
-  `publication_safety.test.mjs` PS1b/PS2 against the hosted Storage;
-- whether the hosted gateway buffers or streams upload bodies (local Kong buffers, which masked
-  PS1 through the gateway);
+- **gear-catalog (D10):**
+  - a guest with no apikey can call a `verify_jwt = false` function on the hosted gateway;
+  - whether responses are compressed and ETags weakened;
+  - whether any CDN in front of functions honors `Cache-Control` and `ETag`;
+  - invocation limits and latency at the expected request rate;
+- **gear-publish:** the commit RPC called with a hosted-issued user JWT (signing keys, `amr`
+  contents); and whether hosted Edge Functions keep processing after a client disconnect (it
+  committed locally; the design is safe either way);
 - PostgREST's accepted clock skew on expired JWTs (about 30 s locally);
 - CORS on hosted functions (locally the gateway answers preflight itself; the function's own
   Origin check is what the tests rely on);
@@ -563,7 +664,11 @@ creates, changes or uses a live credential.
 
    Only after this is the publisher's secret key created.
 2. Private `85Blends-Admin` created by Julian; code moved there deliberately.
-3. The migration reviewed in `E85-Blends-App`, passing tier B, then applied to the live project.
+3. The migration reviewed in `E85-Blends-App`, passing tier B, then applied to the live project. It
+   should be a **squashed** migration containing only the §6.2 design. The local history keeps the
+   superseded Storage-path steps (and drops their policies and grants in `20261114100000`), but
+   the live project never needs them. Exclude `supabase/experimental/` and
+   `gear-legacy-storage-demo` from deployment.
 4. Real Auth: TOTP enrolled for Julian, dashboard MFA on, sign-ups confirmed off.
 5. Function code reviewed across the whole project, plus a CI check that only `gear-*` references
    `recommended-gear` (§5).
@@ -572,8 +677,9 @@ creates, changes or uses a live credential.
    production URL, deployment hashes and any branch alias.
 8. **Alert delivery for the verifier and incidents: unresolved decision.**
 9. Far-future incident recovery options decided (the default stays block and report).
-10. **The iOS remote-catalog client released.** Production publishing only reaches users who
-    install it.
+10. **The iOS remote-catalog client released, reading the gear-catalog endpoint** (the two-path
+    change in `docs/proposals/ios-catalog-endpoint.md`). Production publishing only reaches users
+    who install it; builds that read the old Storage paths never see it.
 11. The first Production publication goes through `gear-publish`; the seed is never uploaded raw.
 12. Android is **not** a blocker for an iOS-only launch. **Before Android is enabled** to read the
     catalog, its reader must implement the identical acceptance rules and pass the ported
@@ -591,12 +697,19 @@ creates, changes or uses a live credential.
 | D6 | HEIF uploads | Stay disabled until a server-side decoder and dimension checks exist | Optional |
 | D7 | Future-timestamp warning in `validate_catalog.py` | Separate iOS tooling PR (`docs/proposals/validator-future-timestamp.md`) | Optional |
 | D8 | Signed catalogs: authenticate content against key holders and tampering. Does **not** prevent an older valid signed publication from overwriting a newer one (needs D10) | App change on iOS (and Android when enabled) | Optional, long term |
-| D10 | Commit ordering for catalog writes (§6.1 blocker) | Commit-guard trigger on `storage.objects` (candidate, local) vs serving "latest" from the database (app change) | **Before hosted testing** |
+| D10 | Commit ordering for catalog writes (§6.1 blocker) | **Decided 2026-11-14: option 2**, the database pointer plus the read endpoint (§6.2). The trigger is experimental evidence only | Done (local) |
+| D11 | Staging catalog visibility | The endpoint serves Staging without credentials, as the public Storage object did; the app limits it to TestFlight/Xcode/Debug. Staging may hold content not yet partner-approved. Alternative: require a tester token | Before the first Staging publication on a hosted project |
 | D9 | Retention of unreferenced images | e.g. report after 30 days, delete manually | Before image uploads ship |
 
 ## 14. Verification in this session
 
 ### Backend branch (local stack, fictional data)
+
+- **D10 option 2 (current design):** `node --test --test-concurrency=1 backend/tests/*.test.mjs`
+  → **34 / 34**: the database pointer (re-run scenarios, §6.2), foundation, review binding, images,
+  origin. The browser run (60 s tokens) → **19 / 19**.
+- **Superseded Storage path (evidence):** `backend/tests/legacy-storage/*.test.mjs` → **54 / 54**.
+  This includes the PS1b and PS2 hazards, asserted without the guard.
 
 - **Publication-safety review (this round):** `tests/publication_safety.test.mjs` reproduces the
   §6.1 blocker (unguarded variants) and shows the candidate commit guard closing it. The full

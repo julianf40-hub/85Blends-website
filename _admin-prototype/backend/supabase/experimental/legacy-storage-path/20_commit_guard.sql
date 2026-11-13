@@ -1,4 +1,5 @@
--- CANDIDATE (local only; hosted viability unverified): a commit-time guard for catalog objects.
+-- LEGACY STORAGE PATH, EXPERIMENTAL EVIDENCE ONLY (not in the migration/deployment path; superseded by
+-- decision D10 option 2, the database pointer). A commit-time guard for catalog objects.
 --
 -- Why: Storage runs RLS as a rolled-back dry run before the body arrives, then writes the row as a
 -- superuser with no RLS (storage-api `Uploader.completeUpload`). The publication-safety review

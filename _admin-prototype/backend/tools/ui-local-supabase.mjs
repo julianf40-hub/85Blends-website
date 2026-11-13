@@ -171,13 +171,15 @@ try {
     assert.equal(sql(`select count(*) from public.gear_catalog_publications`), '0');
   });
 
-  await step('staging publish: recorded, uploaded and read back', async () => {
+  await step('staging publish: one database commit; the endpoint serves it', async () => {
     await A.reload(); await A.waitForSelector('#brand-list li');
     await runChecks(A, 'staging');
     await A.click('[data-action=publish][data-target=staging]');
     await A.waitForSelector('[data-testid=result-staging]', { timeout: 20000 });
-    assert.match(await A.textContent('[data-testid=result-staging]'), /verified/);
-    assert.equal(sql(`select status from public.gear_publication_status order by id desc limit 1`), 'verified');
+    assert.match(await A.textContent('[data-testid=result-staging]'), /committed/);
+    assert.equal(sql(`select status from public.gear_publication_status order by id desc limit 1`), 'committed');
+    const served = await fetch(`${ENV.API_URL}/functions/v1/gear-catalog/staging`);
+    assert.equal(served.headers.get('x-gear-revision'), sql(`select revision from public.gear_publication_head where target = 'staging'`));
     await shot(A, '03-staging-published');
   });
 
@@ -202,25 +204,33 @@ try {
     await A.fill('#dialog input[name=code]', await freshCode(aTotp.secret));
     await A.click('#dialog button[type=submit]');
     await A.waitForSelector('[data-testid=result-production]', { timeout: 20000 });
-    assert.match(await A.textContent('[data-testid=result-production]'), /verified/);
+    assert.match(await A.textContent('[data-testid=result-production]'), /committed/);
   });
 
-  await step('reconcile: an uncertain upload is detected and repaired from the browser', async () => {
-    await editField(A, 'tagline', 'Change that will hit an upload timeout');
-    await A.reload(); await A.waitForSelector('#brand-list li'); // the adapter refreshes a token near expiry
-    const { access_token: token } = await sessionOf(A);
-    const draftVersion = Number(sql(`select version from public.gear_catalog_drafts`));
-    const head = sql(`select revision from public.gear_publication_head where target = 'staging'`);
-    const r = await fn(token, { action: 'review', target: 'staging' });
-    const p = await fn(token, { action: 'publish', target: 'staging', draftVersion, expectedLiveRevision: head, reviewDigest: r.data.reviewDigest }, { 'x-gear-test-fault': 'upload_timeout' });
-    assert.equal(p.data.storage, "uncertain", JSON.stringify(p.data));
-    await A.reload(); await A.waitForSelector('#brand-list li');
-    await tab(A, 'publish');
-    assert.match(await A.textContent('section.target.staging'), /not confirmed in Storage/);
-    await shot(A, '05-reconcile-pending');
-    await A.click('[data-action=reconcile][data-target=staging]');
-    await toastText(A, /Reconcile \(staging\): (repaired|in_sync)/);
-    await A.waitForFunction(() => /origin holds the latest recorded publication|repaired/.test(document.querySelector('section.target.staging')?.textContent ?? ''));
+  await step('lost response: the commit succeeds but the browser gets a 502; the UI retries the same operation and gets the original', async () => {
+    at('lost response: publish, server commits, response replaced by 502');
+    await editField(A, 'tagline', 'Committed, but the response was lost');
+    await runChecks(A, 'staging');
+    const before = Number(sql(`select count(*) from public.gear_catalog_publications where target = 'staging'`));
+    let opId = null;
+    await A.route('**/functions/v1/gear-publish', async (route) => {
+      const body = JSON.parse(route.request().postData() ?? '{}');
+      if (body.action !== 'publish' || opId) return route.continue();
+      opId = body.operationId;
+      await route.fetch();                                    // the server really processes and commits it
+      return route.fulfill({ status: 502, contentType: 'application/json', body: '{"error":"bad_gateway","message":"upstream response lost"}' });
+    });
+    await A.click('[data-action=publish][data-target=staging]');
+    await A.waitForSelector('[data-testid=unknown-staging]', { timeout: 20000 });
+    await A.unroute('**/functions/v1/gear-publish');
+    assert.equal(Number(sql(`select count(*) from public.gear_catalog_publications where target = 'staging'`)), before + 1, 'it was committed');
+    await shot(A, '05-outcome-unknown');
+    at('lost response: retry with the same operation');
+    const retried = A.waitForRequest((r) => r.url().includes('/functions/v1/gear-publish') && /"action":"publish"/.test(r.postData() ?? ''));
+    await A.click('[data-action=retry-publish][data-target=staging]');
+    assert.equal(JSON.parse((await retried).postData()).operationId, opId, 'the retry reuses the operation ID');
+    await A.waitForSelector('[data-testid=result-staging] >> text=replayed', { timeout: 20000 });
+    assert.equal(Number(sql(`select count(*) from public.gear_catalog_publications where target = 'staging'`)), before + 1, 'no second publication');
   });
 
   await step('rollback (staging) from History: reviewed by the server, recorded as a new publication', async () => {
@@ -242,37 +252,29 @@ try {
     await A.waitForSelector('#side .chip >> text=rollback');
   });
 
-  await step('drift acknowledgement: a key-holder write blocks publishing, is acknowledged in the UI, then superseded', async () => {
-    at('drift: key-holder write');
-    const current = (await publicRead('staging')).data;
-    const foreign = { ...current, revision: `bypass-${Date.now()}`, publishedAt: Math.floor(Date.now() / 1000) + 30, brands: current.brands.slice(1) };
-    assert.equal((await serviceWrite('staging', JSON.stringify(foreign, null, 2) + '\n')).status, 200);
+  await step('no second channel: a key-holder write to the old Storage object changes nothing apps receive; the verifier reports it', async () => {
+    at('legacy object: key-holder write');
+    const served = await (await fetch(`${ENV.API_URL}/functions/v1/gear-catalog/staging`)).text();
+    const foreign = JSON.parse(served); foreign.revision = crypto.randomUUID(); foreign.publishedAt += 9999; foreign.brands = [];
+    assert.equal((await serviceWrite('staging', JSON.stringify(foreign))).status, 200);
+    assert.equal(await (await fetch(`${ENV.API_URL}/functions/v1/gear-catalog/staging`)).text(), served, 'apps still receive the database publication');
     await A.reload(); await A.waitForSelector('#brand-list li');
     await tab(A, 'publish');
-    at('drift: UI shows drift and blocks publishing');
-    assert.match(await A.textContent('section.target.staging'), /DRIFT/);
-    await runChecks(A, 'staging');
-    assert.equal(await A.isDisabled('[data-action=publish][data-target=staging]'), true, 'publish blocked while drift is unacknowledged');
-    await shot(A, '09-drift');
-    at('drift: acknowledge');
-    await A.click('[data-action=ack-drift][data-target=staging]');
-    await A.click('#dialog [data-action=ack-drift-go]');
-    await toastText(A, /Drift acknowledged/);
-    await A.waitForFunction(() => /drift acknowledged/.test(document.querySelector('section.target.staging')?.textContent ?? ''));
-    assert.equal(sql(`select count(*) from public.gear_audit_log where event = 'drift_acknowledged'`), '1');
-    at('drift: Changes compares with the acknowledged Storage document');
-    await tab(A, 'changes');
-    await A.selectOption('[data-action=changes-target]', 'staging');
-    assert.match(await sideText(A), /Baseline: the acknowledged Storage document/);
-    at('drift: publish supersedes it with a newer publishedAt');
-    await editField(A, 'tagline', 'Supersedes the acknowledged drift');
-    await runChecks(A, 'staging');
-    await A.click('[data-action=publish][data-target=staging]');
-    await toastText(A, /Local staging publication/, 20000);
-    const served = (await publicRead('staging')).data;
-    assert.equal(served.brands[0].tagline, 'Supersedes the acknowledged drift');
-    assert.ok(served.publishedAt > foreign.publishedAt, 'stamped after the acknowledged document');
-    assert.equal((await fn((await sessionOf(A)).access_token, { action: 'inspect', target: 'staging' })).data.state, 'in_sync');
+    assert.match(await A.textContent('section.target.staging'), /database pointer/);
+    at('legacy object: verifier');
+    await A.click('[data-action=verify]');
+    await A.waitForSelector('#dialog[open] >> text=Verifier report', { timeout: 20000 });
+    assert.match(await A.textContent('#dialog'), /is NOT the publication channel/);
+    await shot(A, '09-legacy-object-reported');
+    await A.click('#dialog [data-action=dialog-close]');
+  });
+
+  await step('guests: a browser with no session reads Production from the public endpoint', async () => {
+    const guest = await (await browser.newContext()).newPage();
+    await guest.goto(`${ENV.API_URL}/functions/v1/gear-catalog/production`);
+    const body = JSON.parse(await guest.textContent('body'));
+    assert.equal(body.schemaVersion, 1);
+    assert.equal(body.revision, sql(`select revision from public.gear_publication_head where target = 'production'`));
   });
 
   await step('image upload: validated PNG stored content-addressed; HEIF refused', async () => {

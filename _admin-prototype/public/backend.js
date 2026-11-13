@@ -183,16 +183,19 @@ export function createSupabaseBackend(cfg) {
     },
     review: (target) => fn({ action: 'review', target }),
     reviewRollback: (target, publicationId) => fn({ action: 'review', target, rollbackOf: publicationId }),
+    // D10 option 2: a publication is one database commit; apps read it from the gear-catalog endpoint.
+    // body.operationId identifies the request: a retry with the same ID returns the original result.
     async publish(body) {
       const r = await fn({ action: 'publish', ...body });
-      return { ...r, readBack: r.storage === 'verified' ? 'verified: the local Storage origin holds exactly the recorded bytes' : `storage: ${r.storage}`,
-        objectPath: `recommended-gear/${r.target === 'staging' ? 'staging/' : ''}catalog-v1.json (local stack)` };
+      return { ...r, readBack: r.replayed ? 'already committed by an earlier attempt of this operation (no second publication)' : 'committed: the database pointer now names this publication',
+        objectPath: `${cfg.supabaseUrl}/functions/v1/gear-catalog/${r.target} (local stack)` };
     },
     async rollback(body) {
       const r = await fn({ action: 'rollback', ...body });
-      return { ...r, readBack: `storage: ${r.storage}`, objectPath: `recommended-gear/${r.target === 'staging' ? 'staging/' : ''}catalog-v1.json (local stack)` };
+      return { ...r, readBack: r.replayed ? 'already committed by an earlier attempt of this operation' : 'committed: the database pointer now names this publication',
+        objectPath: `${cfg.supabaseUrl}/functions/v1/gear-catalog/${r.target} (local stack)` };
     },
-    reconcile: (target) => fn({ action: 'reconcile', target }),
+    reconcile: null,
     acknowledge: (target, digest) => fn({ action: 'acknowledge', target, digest }),
     async history(target) {
       const pubs = await rest(`gear_catalog_publications?target=eq.${target}&select=id,target,revision,published_at,published_by,digest,document,summary,rollback_of,draft_version&order=published_at.desc`);

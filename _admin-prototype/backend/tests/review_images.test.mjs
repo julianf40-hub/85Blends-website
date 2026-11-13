@@ -3,9 +3,10 @@
 //   node --test --test-concurrency=1 tests/*.test.mjs
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { deflateSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
-import { ENV, draftRow, fn, head, http, mfa, publicRead, publish, resetLocalDatabase, review, saveDraft, serviceWrite, sleep, sql } from './helpers.mjs';
+import { ENV, FN, draftRow, fn, head, http, mfa, publicRead, publish, resetLocalDatabase, review, saveDraft, serviceWrite, sleep, sql } from './helpers.mjs';
 
 let publisher;
 let editor;
@@ -35,7 +36,7 @@ function jpegHeader(width, height) {
   return Buffer.concat([Buffer.from([0xff, 0xd8]), sof, Buffer.from([0xff, 0xd9])]);
 }
 const heic = () => Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from('ftypheic'), Buffer.alloc(16)]);
-const upload = (token, brand, bytes, type) => http(`/functions/v1/gear-publish?action=upload_image&brand=${brand}`, { method: 'POST', token, body: bytes, raw: true, headers: { 'Content-Type': type } });
+const upload = (token, brand, bytes, type) => http(`/functions/v1/${FN.name}?action=upload_image&brand=${brand}`, { method: 'POST', token, body: bytes, raw: true, headers: { 'Content-Type': type } });
 
 before(async () => {
   resetLocalDatabase();
@@ -51,7 +52,7 @@ test('publish is bound to the reviewed draft: a draft saved after review makes t
   assert.equal(reviewed.status, 200, JSON.stringify(reviewed.data));
   assert.ok(reviewed.data.reviewDigest);
   await saveDraft(editor, (c) => { c.brands[0].priceText = 'From $301'; });
-  const r = await fn(publisher, { action: 'publish', target: 'staging', draftVersion: reviewed.data.draftVersion, expectedLiveRevision: null, reviewDigest: reviewed.data.reviewDigest });
+  const r = await fn(publisher, { action: 'publish', operationId: randomUUID(), target: 'staging', draftVersion: reviewed.data.draftVersion, expectedLiveRevision: null, reviewDigest: reviewed.data.reviewDigest });
   assert.equal(r.data.error, 'draft_changed', JSON.stringify(r.data));
 });
 
@@ -59,31 +60,17 @@ test('publish is bound to the reviewed approvals and baseline (same draft versio
   // approvals live in the draft meta, so changing them bumps the version; forge the same version with a stale digest instead
   const reviewed = await review(publisher, 'production');
   const forged = { ...reviewed.data, reviewDigest: createHash('sha256').update('something else').digest('hex') };
-  const r = await fn(publisher, { action: 'publish', target: 'production', draftVersion: forged.draftVersion, expectedLiveRevision: null, confirmation: 'PUBLISH PRODUCTION', reviewDigest: forged.reviewDigest });
+  const r = await fn(publisher, { action: 'publish', operationId: randomUUID(), target: 'production', draftVersion: forged.draftVersion, expectedLiveRevision: null, confirmation: 'PUBLISH PRODUCTION', reviewDigest: forged.reviewDigest });
   assert.equal(r.data.error, 'review_stale', JSON.stringify(r.data));
-  const missing = await fn(publisher, { action: 'publish', target: 'staging', draftVersion: draftRow().version, expectedLiveRevision: null });
+  const missing = await fn(publisher, { action: 'publish', operationId: randomUUID(), target: 'staging', draftVersion: draftRow().version, expectedLiveRevision: null });
   assert.equal(missing.data.error, 'review_stale');
   // baseline change: a publication to staging after the review changes the live revision
   const stagingReview = await review(publisher, 'staging');
   assert.equal((await publish(publisher, 'staging')).status, 200);
-  const late = await fn(publisher, { action: 'publish', target: 'staging', draftVersion: draftRow().version, expectedLiveRevision: stagingReview.data.live?.revision ?? null, reviewDigest: stagingReview.data.reviewDigest });
+  const late = await fn(publisher, { action: 'publish', operationId: randomUUID(), target: 'staging', draftVersion: draftRow().version, expectedLiveRevision: stagingReview.data.live?.revision ?? null, reviewDigest: stagingReview.data.reviewDigest });
   assert.equal(late.data.error, 'live_changed');
 });
 
-test('acknowledging drift after a review changes the baseline, so the old review is stale', async () => {
-  const before = await review(publisher, 'staging');
-  const current = (await publicRead('staging')).data;
-  await serviceWrite('staging', JSON.stringify({ ...current, revision: `bypass-${Date.now()}`, publishedAt: Math.floor(Date.now() / 1000) + 10, brands: current.brands.slice(1) }, null, 2) + '\n');
-  const drift = (await fn(publisher, { action: 'inspect', target: 'staging' })).data;
-  assert.equal((await fn(publisher, { action: 'acknowledge', target: 'staging', digest: drift.originDigest })).status, 200);
-  const r = await fn(publisher, { action: 'publish', target: 'staging', draftVersion: draftRow().version, expectedLiveRevision: head('staging').revision, reviewDigest: before.data.reviewDigest });
-  assert.equal(r.data.error, 'review_stale', JSON.stringify(r.data));
-  const fresh = await review(publisher, 'staging');
-  assert.equal(fresh.data.baseline, 'acknowledged_storage');
-  assert.equal((await publish(publisher, 'staging')).status, 200);
-});
-
-// ---------------------------------------------------------------- origin / CORS
 test('browser origin: the admin origin gets CORS; any other origin is refused server-side', async () => {
   // Locally the Kong gateway answers preflights itself ('*'); hosted functions must set CORS (hosted check).
   const pre = await fetch(`${ENV.API_URL}/functions/v1/gear-publish`, { method: 'OPTIONS', headers: { Origin: 'http://127.0.0.1:4174', 'Access-Control-Request-Method': 'POST' } });
@@ -152,21 +139,3 @@ test('review blocks Production when a referenced gear image is missing; Staging 
 });
 
 // ---------------------------------------------------------------- verifier
-test('verifier (on demand, read-only): reports drift, missing images and unreferenced images; deletes nothing', async () => {
-  const before = sql(`select count(*) from storage.objects where bucket_id = 'recommended-gear'`);
-  const report = await fn(publisher, { action: 'verify' });
-  assert.equal(report.status, 200, JSON.stringify(report.data));
-  const r = report.data;
-  assert.ok(r.info.some((a) => a.target === 'draft' && a.kind === 'image'), 'draft image on a non-gear host is reported (warning level for drafts)');
-  assert.ok(r.images.unreferenced.length >= 2, 'test uploads are unreferenced');
-  assert.ok(r.images.unreferenced.every((o) => o.deleted === false));
-  assert.equal(r.alertDelivery.configured, false);
-  assert.equal(sql(`select count(*) from storage.objects where bucket_id = 'recommended-gear'`), before, 'nothing deleted');
-  assert.match(sql(`select string_agg(event, ',') from public.gear_audit_log`), /verify_run/);
-  // drift is an alert
-  await serviceWrite('staging', '{"schemaVersion":1,"revision":"","brands":"x"}');
-  const again = (await fn(publisher, { action: 'verify' })).data;
-  assert.ok(again.alerts.some((a) => a.target === 'staging' && a.kind === 'storage_drift'));
-  // an editor may run it too (read-only)
-  assert.equal((await fn(editor, { action: 'verify' })).status, 200);
-});

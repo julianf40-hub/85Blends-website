@@ -4,13 +4,13 @@
 //   node --test --test-concurrency=1 tests/*.test.mjs
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
-import { USERS } from '../tools/make-seed.mjs';
-import { directWrite, fn, grantFor, http, latestDocument, mfa, publicRead, publish, resetLocalDatabase, saveDraft, signIn, sleep, sql, svc } from './helpers.mjs';
+import { USERS } from '../../tools/make-seed.mjs';
+import { directWrite, fn, grantFor, http, latestDocument, mfa, publicRead, publish, resetLocalDatabase, saveDraft, signIn, sleep, sql, svc } from '../helpers.mjs';
 
 let publisher;
 
 before(async () => {
-  resetLocalDatabase();
+  resetLocalDatabase({ legacyStoragePath: true });
   await sleep(3000);
   publisher = await mfa('publisher');
   await saveDraft(publisher, (c, m) => { for (const b of c.brands) m.approvals[b.id] = 'approved'; });

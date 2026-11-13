@@ -1,24 +1,25 @@
-// gear-publish: the only routine writer of the Recommended Gear catalog (LOCAL implementation).
+// gear-publish: validates, reviews and commits Recommended Gear publications (LOCAL implementation).
+// Decision D10, option 2: the DATABASE is the publication channel. There is no Storage catalog write.
 //
-// No external dependencies: it talks to Auth, PostgREST and Storage over HTTP, so it runs in the
-// local Edge Runtime without network access and ports to a hosted project unchanged.
-//
-// Authorization is checked here independently of the UI and again by the database:
+// Authorization is checked here and again, independently, by the database:
 //   1. the gateway verifies the JWT (verify_jwt = true);
 //   2. Auth confirms the session is still valid (GET /auth/v1/user: revoked or signed-out sessions fail);
 //   3. aal2 is required; Production also needs a TOTP verification within the step-up window;
 //   4. the caller must hold the publisher role in gear_admins AND match the pinned publisher ID;
-//   5. the database trigger re-checks publisher identity, aal2, digest and publishedAt ordering.
+//   5. the commit RPC runs with the CALLER's JWT and re-checks publisher, aal2 and the Production step-up
+//      in the database, under a row lock on the target's pointer.
 //
-// Publishing runs under a lease with a fencing token (gear_acquire_lease): reconcile Storage with
-// the database, validate, record, upload, read back. A crash leaves the lease to expire; the next
-// run re-sends recorded bytes that never landed. Anything else in Storage is drift.
-//
-// Storage writes use the CALLER's verified JWT, not a service key, and carry the lease token in the
-// object's user metadata. Storage RLS (migration 20261113190000) then enforces, when the object row
-// is committed: publisher + aal2 from that JWT, the live lease token, a compare-and-swap on the object
-// version captured before it was read, and (Production) a recent TOTP. A stale writer whose lease
-// expired, or a reconcile racing another writer, is rejected by Storage itself.
+// Publish = review binding + exact bytes + one transaction:
+//   - the client sends the reviewDigest it was shown and an operationId (a UUID it keeps for retries);
+//   - this function recomputes the review; any difference is review_stale. It stamps and validates the
+//     exact bytes and stores them as a private intent bound to the reviewed draft version (or rollback
+//     source) and to the pointer the review saw;
+//   - gear_commit_publication(operationId) inserts the publication and advances the pointer only if the
+//     pointer and draft are unchanged (compare-and-swap). A stale or concurrent publisher gets
+//     live_changed and changes nothing;
+//   - a retry with the same operationId returns the original publication (replayed: true), never a
+//     second one. Reusing an operationId for a different request is operation_conflict.
+// Apps read the current publication from gear-catalog. Images stay immutable Storage objects.
 
 import { parseBytes, checkSuccessor, encodeCatalog, collectIssues, CatalogRejected } from '../_shared/validator.mjs';
 import { diffCatalogs, summarize } from '../_shared/diff.mjs';
@@ -30,10 +31,7 @@ const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 const SERVICE_KEY = Deno.env.get('GEAR_PUBLISHER_SECRET_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 const PINNED_PUBLISHER = Deno.env.get('GEAR_PUBLISHER_USER_ID') ?? '';
 const STEP_UP_SECONDS = Number(Deno.env.get('GEAR_PRODUCTION_STEP_UP_SECONDS') ?? 900);
-const LEASE_SECONDS = Number(Deno.env.get('GEAR_LEASE_SECONDS') ?? 60);
-// An upload must be able to finish inside the lease: Storage checks RLS when an upload STARTS and
-// completes it as superuser, so the function itself refuses to start one it cannot finish in time.
-const UPLOAD_TIMEOUT_SECONDS = Number(Deno.env.get('GEAR_UPLOAD_TIMEOUT_SECONDS') ?? 20);
+const UPLOAD_TIMEOUT_SECONDS = Number(Deno.env.get('GEAR_UPLOAD_TIMEOUT_SECONDS') ?? 20); // image uploads
 const TEST_FAULTS = Deno.env.get('GEAR_ALLOW_TEST_FAULTS') === 'local-only'
   && /^http:\/\/(kong|127\.0\.0\.1|localhost)(:\d+)?$/.test(SUPABASE_URL);
 const MAX_FUTURE_SKEW = 300;
@@ -41,12 +39,13 @@ const BUCKET = 'recommended-gear';
 const CONFIRMATION = 'PUBLISH PRODUCTION';
 const VALIDATOR_VERSION = 'js-port-of-validate_catalog.py@e6c42ed';
 const TARGETS = ['staging', 'production'];
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 // Canonical https prefix that catalogs use for gear images (hosted: the project's public bucket URL).
 const IMAGE_PUBLIC_BASE = Deno.env.get('GEAR_IMAGE_PUBLIC_BASE') ?? '';
 const IMAGE_PATH = /^images\/[a-z0-9-]{1,64}\/[a-f0-9]{64}\.(png|jpg)$/;
 // Browser origins allowed to call this function (the admin page). Others are refused.
 const ALLOWED_ORIGINS = (Deno.env.get('GEAR_ALLOWED_ORIGINS') ?? '').split(',').map((o) => o.trim()).filter(Boolean);
-const objectPath = (target: string) => (target === 'staging' ? 'staging/catalog-v1.json' : 'catalog-v1.json');
+const legacyObjectPath = (target: string) => (target === 'staging' ? 'staging/catalog-v1.json' : 'catalog-v1.json');
 
 class HttpError extends Error {
   constructor(public status: number, public code: string, message: string, public extra: Record<string, unknown> = {}) { super(message); }
@@ -57,6 +56,12 @@ const serviceHeaders = (extra: Record<string, string> = {}) => (SERVICE_KEY.star
   ? { apikey: SERVICE_KEY, ...extra }
   : { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`, ...extra });
 
+function dbError(status: number, body: any, fallback: string) {
+  const message = String(body?.message ?? body ?? fallback);
+  const code = /^([a-z_]+):/.exec(message)?.[1] ?? 'db_error';
+  return new HttpError(status, code, message);
+}
+
 async function rest(path: string, init: RequestInit = {}) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     ...init, headers: serviceHeaders({ 'Content-Type': 'application/json', ...(init.headers as Record<string, string> ?? {}) }),
@@ -64,11 +69,7 @@ async function rest(path: string, init: RequestInit = {}) {
   const text = await res.text();
   let body: any = null;
   try { body = text ? JSON.parse(text) : null; } catch { body = text; }
-  if (!res.ok) {
-    const message = String(body?.message ?? body ?? res.statusText);
-    const code = /^([a-z_]+):/.exec(message)?.[1] ?? 'db_error';
-    throw new HttpError(res.status, code, message);
-  }
+  if (!res.ok) throw dbError(res.status, body, res.statusText);
   return body;
 }
 const rpc = (fn: string, args: Record<string, unknown>) => rest(`rpc/${fn}`, { method: 'POST', body: JSON.stringify(args) });
@@ -78,105 +79,11 @@ async function sha256(bytes: Uint8Array) {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function readOrigin(target: string): Promise<Uint8Array | null> {
-  // The authenticated origin endpoint, never the public CDN URL.
-  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/authenticated/${BUCKET}/${objectPath(target)}`, { headers: serviceHeaders({ 'Cache-Control': 'no-cache' }) });
-  if (res.status === 200) return new Uint8Array(await res.arrayBuffer());
-  const text = await res.text();
-  if ((res.status === 400 || res.status === 404) && /not.?found/i.test(text)) return null;
-  throw new HttpError(502, 'storage_unavailable', `Storage origin read failed: HTTP ${res.status}`);
-}
-
-class UploadUncertain extends Error {}
-class StorageRejected extends Error {}
-type WriteContext = { jwt: string; userId: string; token: string; target: string; publicationId: string; deadline: number; fault: string | null };
 const b64 = (text: string) => btoa(String.fromCharCode(...new TextEncoder().encode(text)));
-
-async function upload(target: string, bytes: Uint8Array, fault: string | null, ctx: WriteContext) {
-  if (!hasFault(ctx.fault, 'skip_lease_margin_check') && Date.now() + UPLOAD_TIMEOUT_SECONDS * 1000 + 500 > ctx.deadline) {
-    throw new HttpError(409, 'lease_expiring', 'Not enough lease time left to finish the upload; nothing was uploaded. Try again.');
-  }
-  // Single-use write grant: bound to this environment, its object path, this publication and its size.
-  const nonce = await rpc('gear_authorize_write', { p_token: ctx.token, p_target: ctx.target, p_publication_id: ctx.publicationId, p_user_id: ctx.userId });
-  await pause(ctx.fault, 'before_upload'); // local tests: hold an issued grant across a lease change
-  try {
-    return await uploadWithGrant(target, bytes, fault, ctx, nonce);
-  } finally {
-    await rpc('gear_consume_write', { p_token: ctx.token, p_target: ctx.target }).catch(() => {});
-  }
-}
-
-/**
- * Local test fault `stall_body:N`: sends the request line, headers (which is when Storage runs its
- * permission check) and the first half of the body, waits N ms with the connection open, then sends
- * the rest. Raw HTTP/1.1 with an explicit Content-Length; no client-side timeout at any point, so
- * whatever happens next is the server's own behavior.
- */
-async function stalledUpload(base: string, path: string, bytes: Uint8Array, headers: Record<string, string>, stallMs: number): Promise<Response> {
-  const url = new URL(`${base}${path}`);
-  const conn = await Deno.connect({ hostname: url.hostname, port: Number(url.port || 80) });
-  const head = [`POST ${url.pathname} HTTP/1.1`, `Host: ${url.host}`, `Content-Length: ${bytes.length}`, 'Connection: close',
-    ...Object.entries(headers).map(([k, v]) => `${k}: ${v}`), '', ''].join('\r\n');
-  const half = Math.floor(bytes.length / 2);
-  await conn.write(new TextEncoder().encode(head));
-  await conn.write(bytes.slice(0, half));
-  console.log(JSON.stringify({ gearTest: 'stall_body', phase: 'stalled', sentBytes: half, totalBytes: bytes.length, at: Date.now() }));
-  await new Promise((r) => setTimeout(r, stallMs));
-  await conn.write(bytes.slice(half));
-  console.log(JSON.stringify({ gearTest: 'stall_body', phase: 'resumed', at: Date.now() }));
-  const chunks: Uint8Array[] = [];
-  const buf = new Uint8Array(65536);
-  for (;;) { const n = await conn.read(buf); if (n === null) break; chunks.push(buf.slice(0, n)); }
-  conn.close();
-  const text = new TextDecoder().decode(new Uint8Array(chunks.flatMap((c) => [...c])));
-  const status = Number(/^HTTP\/1\.1 (\d{3})/.exec(text)?.[1] ?? 0);
-  const body = text.split('\r\n\r\n').slice(1).join('\r\n\r\n');
-  return new Response(body.replace(/^[0-9a-f]+\r\n|\r\n0\r\n\r\n$/g, ''), { status });
-}
-
-async function uploadWithGrant(target: string, bytes: Uint8Array, fault: string | null, ctx: WriteContext, nonce: string) {
-  if (hasFault(fault, 'upload_timeout')) throw new UploadUncertain('upload timed out before Storage answered (test fault: not stored)');
-  // stall_body: through the API gateway (local Kong buffers the whole body before forwarding, so
-  // Storage authorizes only after the stall). stall_body_direct: straight to the local Storage
-  // service, modelling a gateway that streams the body (Storage authorizes on the headers).
-  const stall = faultParts(fault).map((f) => /^stall_body(_direct)?:(\d{1,6})$/.exec(f)).find(Boolean);
-  let res: Response;
-  if (stall) {
-    const [base, prefix] = stall[1] ? ['http://storage:5000', ''] : [SUPABASE_URL, '/storage/v1'];
-    res = await stalledUpload(base, `${prefix}/object/${BUCKET}/${objectPath(target)}`, bytes, {
-      apikey: ANON_KEY, Authorization: `Bearer ${ctx.jwt}`, 'Content-Type': 'application/json', 'Cache-Control': 'max-age=60',
-      'x-upsert': 'true', 'x-metadata': b64(JSON.stringify({ gear_write: nonce })),
-    }, Number(stall[2]));
-  } else try {
-    res = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${objectPath(target)}`, {
-      method: 'POST', body: bytes,
-      headers: {
-        apikey: ANON_KEY, Authorization: `Bearer ${ctx.jwt}`, // the caller's verified session, subject to Storage RLS
-        'Content-Type': 'application/json', 'Cache-Control': 'max-age=60', 'x-upsert': 'true',
-        'x-metadata': b64(JSON.stringify({ gear_write: nonce })),
-      },
-      signal: AbortSignal.timeout(UPLOAD_TIMEOUT_SECONDS * 1000),
-    });
-  } catch (error) {
-    throw new UploadUncertain(`upload did not complete (${(error as Error).message}); it may or may not be stored`);
-  }
-  if (!res.ok) {
-    const text = (await res.text()).slice(0, 300);
-    // RLS refusal: stale lease token, object changed since it was read (CAS), not the aal2 publisher,
-    // or (Production) TOTP step-up expired. Storage kept the previous object version.
-    if ((res.status === 400 || res.status === 403) && /row-level security|Unauthorized|policy/i.test(text)) throw new StorageRejected(text);
-    // Candidate commit guard (migration 20261113220000): Storage reports the trigger's PT403 as a
-    // 500 DatabaseError without its message. The row was not written; the served object is unchanged.
-    if (res.status === 500 && /code: PT403/.test(text)) throw new StorageRejected(`refused at commit by the catalog commit guard: ${text}`);
-    throw new HttpError(502, 'upload_refused', `Storage refused the upload: HTTP ${res.status} ${text}`);
-  }
-  if (hasFault(fault, 'response_lost')) throw new UploadUncertain('response lost after the body was sent (test fault: stored)');
-}
 
 // Local test faults: a comma-separated list in x-gear-test-fault (honored only in local test mode).
 const faultParts = (fault: string | null) => (fault ? fault.split(',').map((f) => f.trim()).filter(Boolean) : []);
 const hasFault = (fault: string | null, name: string) => faultParts(fault).includes(name);
-const prepareWrite = (target: string, token: string) => rpc('gear_prepare_write', { p_token: token, p_target: target });
 const pause = async (fault: string | null, point: string) => {
   const m = faultParts(fault).map((f) => new RegExp(`^pause_${point}:(\\d{1,5})$`).exec(f)).find(Boolean);
   if (m) await new Promise((r) => setTimeout(r, Number(m[1])));
@@ -211,7 +118,7 @@ function requireAdmin(caller: Caller) {
 
 function requirePublisher(caller: Caller, target: string) {
   requireAdmin(caller);
-  if (caller.role !== 'publisher') throw new HttpError(403, 'publisher_required', 'Only the publisher can publish, roll back, reconcile or acknowledge drift');
+  if (caller.role !== 'publisher') throw new HttpError(403, 'publisher_required', 'Only the publisher can publish or roll back');
   if (!PINNED_PUBLISHER || caller.id !== PINNED_PUBLISHER) throw new HttpError(403, 'publisher_not_pinned', 'This account is not the configured publisher');
   if (target === 'production') {
     const totp = caller.amr.filter((m) => m.method === 'totp').map((m) => m.timestamp).sort().at(-1);
@@ -223,90 +130,18 @@ function requirePublisher(caller: Caller, target: string) {
 
 // ---------------------------------------------------------------- state
 async function loadTarget(target: string) {
-  const [head] = await rest(`gear_publication_head?target=eq.${target}&select=revision,published_at,digest`);
-  const pubs = await rest(`gear_catalog_publications?target=eq.${target}&select=id,revision,published_at,digest,document&order=published_at.desc&limit=2`);
-  const latest = pubs[0] ?? null;
-  let status: string | null = null;
-  if (latest) {
-    const s = await rest(`gear_publication_status?publication_id=eq.${latest.id}&select=status&order=id.desc&limit=1`);
-    status = s[0]?.status ?? null;
+  const [head] = await rest(`gear_publication_head?target=eq.${target}&select=revision,published_at,digest,current_publication_id`);
+  let current: any = null;
+  if (head?.current_publication_id) {
+    [current] = await rest(`gear_catalog_publications?id=eq.${head.current_publication_id}&select=id,revision,published_at,digest,document`);
   }
-  const acks = await rest(`gear_storage_drift_acks?target=eq.${target}&select=digest,passes_validation,foreign_published_at,foreign_revision`);
-  return { head, latest, previous: pubs[1] ?? null, status, acks };
-}
-
-async function inspectStorage(target: string, opts: { repair?: boolean; token?: string; jwt?: string; userId?: string; fault?: string | null; deadline?: number } = {}) {
-  // Repair mode captures the stored object version FIRST, under the lease. Every write below must
-  // replace exactly that version (Storage RLS), so content that changes after this read is never
-  // overwritten automatically.
-  if (opts.repair) await prepareWrite(target, opts.token!);
-  const { latest, previous, status, acks } = await loadTarget(target);
-  const origin = await readOrigin(target);
-  const originDigest = origin ? await sha256(origin) : null;
-  const base = { latestRevision: latest?.revision ?? null, latestStatus: status, originDigest };
-  if (!latest) return origin ? { ...base, state: 'drift', reason: 'Storage holds a catalog but no publication is recorded', ...(await describeForeign(origin, acks, originDigest)) } : { ...base, state: 'empty' };
-  if (originDigest === latest.digest) {
-    if (status !== 'verified' && opts.repair) await rpc('gear_record_status', { p_token: opts.token, p_publication_id: latest.id, p_status: 'verified', p_note: 'reconciled: origin holds the recorded bytes' });
-    return { ...base, state: status === 'verified' ? 'in_sync' : opts.repair ? 'repaired' : 'pending' };
-  }
-  const acknowledged = new Set(acks.map((a: any) => a.digest));
-  const neverLanded = ['recorded', 'uncertain', 'refused'].includes(status ?? '')
-    && (originDigest === null || originDigest === previous?.digest || acknowledged.has(originDigest));
-  if (neverLanded) {
-    if (!opts.repair) return { ...base, state: 'pending', reason: 'the latest recorded publication has not reached Storage yet' };
-    await pause(opts.fault ?? null, 'before_resend');
-    const bytes = new TextEncoder().encode(latest.document); // identical recorded bytes; one attempt, no retry loop
-    try {
-      await upload(target, bytes, null, { jwt: opts.jwt!, userId: opts.userId!, token: opts.token!, target, publicationId: latest.id, deadline: opts.deadline!, fault: opts.fault ?? null });
-    } catch (error) {
-      if (error instanceof UploadUncertain) return { ...base, state: 'pending', reason: error.message };
-      if (error instanceof StorageRejected) {
-        return { ...base, state: 'pending', reason: 'Storage changed after it was read (or the lease expired); nothing was overwritten. Inspect again.' };
-      }
-      throw error;
-    }
-    await prepareWrite(target, opts.token!); // our own write is now the expected version
-    const readBack = await readOrigin(target);
-    const ok = !!readBack && (await sha256(readBack)) === latest.digest;
-    await rpc('gear_record_status', { p_token: opts.token, p_publication_id: latest.id, p_status: ok ? 'verified' : 'uncertain', p_note: 're-sent identical recorded bytes during reconcile' });
-    return { ...base, state: ok ? 'repaired' : 'pending' };
-  }
-  return { ...base, state: 'drift', ...(await describeForeign(origin!, acks, originDigest)),
-    reason: 'Storage holds bytes that do not match the latest recorded publication (a writer bypassed gear-publish, or an older upload landed late)' };
-}
-
-async function describeForeign(origin: Uint8Array, acks: any[], digest: string | null) {
-  let validationError: string | null = null;
-  try { parseBytes(origin); } catch (error) { validationError = (error as Error).message; }
-  let foreign: any = null;
-  try { foreign = JSON.parse(new TextDecoder().decode(origin)); } catch { /* not JSON */ }
-  const passesValidation = validationError === null;
-  const originPublishedAt = typeof foreign?.publishedAt === 'number' ? foreign.publishedAt : null;
-  return {
-    acknowledged: acks.some((a) => a.digest === digest), passesValidation, validationError,
-    originRevision: typeof foreign?.revision === 'string' ? foreign.revision : null, originPublishedAt,
-    // A catalog that passes validation and is stamped far ahead: conforming clients that accepted it
-    // reject every normally stamped publication until then. Default: block and report.
-    futureIncident: passesValidation && originPublishedAt !== null && originPublishedAt > Math.floor(Date.now() / 1000) + MAX_FUTURE_SKEW,
-  };
+  return { head, current };
 }
 
 function approvalErrors(brands: any[], meta: any) {
   const approvals = meta?.approvals ?? {};
   return brands.filter((b) => b.hidden !== true && approvals[b.id] !== 'approved')
     .map((b) => ({ path: `approval.${b.id}`, message: `${b.name || b.id}: partner approval is ${approvals[b.id] ?? 'not recorded'}` }));
-}
-
-async function withLease<T>(target: string, fn: (token: string, keep: () => void, deadline: number) => Promise<T>): Promise<T> {
-  const acquiredAt = Date.now();
-  const token = await rpc('gear_acquire_lease', { p_target: target, p_ttl_seconds: LEASE_SECONDS });
-  const deadline = acquiredAt + LEASE_SECONDS * 1000; // conservative: measured from before the request
-  let release = true;
-  try {
-    return await fn(token, () => { release = false; }, deadline);
-  } finally {
-    if (release) await rpc('gear_release_lease', { p_target: target, p_token: token }).catch(() => {});
-  }
 }
 
 function imageReferences(brands: any[]) {
@@ -343,15 +178,18 @@ async function imageFindings(brands: any[], target: string) {
 
 // One computation for review and publish. The digest binds a publish to exactly what was reviewed:
 // target, draft version or rollback source, baseline bytes, candidate brands and (Production) approvals.
+// One computation for review and publish. The digest binds a publish to exactly what was reviewed:
+// target, draft version or rollback source, the CURRENT publication (baseline) bytes, the candidate
+// brands and (Production) approvals.
 async function computeReview(target: string, opts: { rollbackOf?: string | null }) {
-  const { head, latest } = await loadTarget(target);
-  const storage: any = await inspectStorage(target);
+  const { head, current } = await loadTarget(target);
   const [draft] = await rest('gear_catalog_drafts?id=eq.main&select=catalog,meta,version');
   let brands: any[];
   let draftVersion: number | null = null;
   let rollbackOf: string | null = null;
   if (opts.rollbackOf) {
-    const [source] = await rest(`gear_catalog_publications?id=eq.${encodeURIComponent(opts.rollbackOf)}&target=eq.${target}&select=id,document`);
+    if (!UUID.test(String(opts.rollbackOf))) throw new HttpError(400, 'bad_rollback', 'rollbackOf must be a publication id');
+    const [source] = await rest(`gear_catalog_publications?id=eq.${opts.rollbackOf}&target=eq.${target}&select=id,document`);
     if (!source) throw new HttpError(404, 'not_found', 'No such publication for this target');
     brands = JSON.parse(source.document).brands;
     rollbackOf = source.id;
@@ -359,12 +197,10 @@ async function computeReview(target: string, opts: { rollbackOf?: string | null 
     brands = draft.catalog.brands;
     draftVersion = draft.version;
   }
-  const foreignMayBeAccepted = storage.state === 'drift' && storage.acknowledged && storage.passesValidation;
-  const baselineBytes = foreignMayBeAccepted ? await readOrigin(target) : latest ? new TextEncoder().encode(latest.document) : null;
-  const baselineDoc = baselineBytes ? JSON.parse(new TextDecoder().decode(baselineBytes)) : null;
+  const baselineBytes = current ? new TextEncoder().encode(current.document) : null;
+  const baselineDoc = current ? JSON.parse(current.document) : null;
   const now = Math.floor(Date.now() / 1000);
-  const highest = Math.max(head?.published_at ?? 0, foreignMayBeAccepted ? storage.originPublishedAt ?? 0 : 0);
-  const candidate = { schemaVersion: 1, revision: 'pending-stamp', publishedAt: Math.max(now, highest + 1), brands };
+  const candidate = { schemaVersion: 1, revision: 'pending-stamp', publishedAt: Math.max(now, (head?.published_at ?? 0) + 1), brands };
   const issues = collectIssues(candidate);
   const images = await imageFindings(brands, target);
   const approvals = target === 'production' ? approvalErrors(brands, draft.meta) : [];
@@ -373,16 +209,15 @@ async function computeReview(target: string, opts: { rollbackOf?: string | null 
     ? Object.fromEntries(brands.filter((b) => b.hidden !== true).map((b) => [b.id, draft.meta?.approvals?.[b.id] ?? null])) : null;
   const reviewDigest = await sha256(new TextEncoder().encode(JSON.stringify({
     target, draftVersion, rollbackOf,
-    baseline: baselineBytes ? await sha256(baselineBytes) : null,
+    baseline: current ? { id: current.id, digest: current.digest } : null,
     brands: await sha256(new TextEncoder().encode(JSON.stringify(brands))),
     approvals: visibleApprovals,
   })));
   return {
-    target, draftVersion, rollbackOf, brands, meta: draft.meta, head, latest, storage, foreignMayBeAccepted, baselineBytes, baselineDoc,
+    target, draftVersion, rollbackOf, brands, meta: draft.meta, head, current, baselineBytes, baselineDoc,
     live: head?.revision ? { revision: head.revision, publishedAt: head.published_at } : null,
     errors: [...issues.errors, ...images.errors, ...approvals], warnings: [...issues.warnings, ...images.warnings],
-    diff, summary: summarize(diff), bytes: encodeCatalog(candidate).length,
-    baseline: foreignMayBeAccepted ? 'acknowledged_storage' : 'recorded', reviewDigest,
+    diff, summary: summarize(diff), bytes: encodeCatalog(candidate).length, baseline: 'current_publication', reviewDigest,
   };
 }
 
@@ -475,15 +310,36 @@ async function verify(caller: Caller) {
   const nowMs = Date.now();
   const targets: Record<string, unknown> = {};
   for (const target of TARGETS) {
-    const st: any = await inspectStorage(target); // read-only: never repairs
-    targets[target] = st;
-    if (st.state === 'drift') alerts.push({ target, kind: st.futureIncident ? 'incident_future_timestamp' : 'storage_drift', message: st.reason, acknowledged: !!st.acknowledged });
-    if (st.state === 'pending') alerts.push({ target, kind: 'storage_pending', message: st.reason ?? 'latest publication not confirmed in Storage' });
-    if (['conflict', 'refused', 'uncertain'].includes(st.latestStatus) && st.state !== 'in_sync') alerts.push({ target, kind: `status_${st.latestStatus}`, message: `latest publication status is ${st.latestStatus}` });
+    const { head, current } = await loadTarget(target);
+    const [newest] = await rest(`gear_catalog_publications?target=eq.${target}&select=id,revision,published_at&order=published_at.desc&limit=1`);
+    const t: any = { pointer: head?.current_publication_id ?? null, revision: head?.revision ?? null, publishedAt: head?.published_at ?? null };
+    if (current) {
+      const actual = await sha256(new TextEncoder().encode(current.document));
+      if (actual !== current.digest) alerts.push({ target, kind: 'integrity', message: 'current publication bytes do not match their digest' });
+      if (head.revision !== current.revision || head.digest !== current.digest || Number(head.published_at) !== Number(current.published_at)) {
+        alerts.push({ target, kind: 'pointer_mismatch', message: 'head fields do not match the publication the pointer names' });
+      }
+      if (newest && newest.id !== current.id) alerts.push({ target, kind: 'pointer_not_newest', message: `a newer publication (${newest.revision}) exists than the current pointer` });
+      // What the apps actually receive from the read endpoint.
+      const served = await fetch(`${SUPABASE_URL}/functions/v1/gear-catalog/${target}`, { headers: { 'Cache-Control': 'no-cache' } });
+      t.endpoint = { status: served.status, etag: served.headers.get('ETag') };
+      await served.body?.cancel();
+      // Gateways may weaken the ETag (W/"…"); the value is still the digest of the bytes.
+      if (served.status !== 200 || (served.headers.get('ETag') ?? '').replace(/^W\//, '') !== `"${current.digest}"`) {
+        alerts.push({ target, kind: 'endpoint_mismatch', message: `gear-catalog served HTTP ${served.status} ${served.headers.get('ETag') ?? ''}, not the current publication` });
+      }
+    } else if (newest) {
+      alerts.push({ target, kind: 'pointer_missing', message: 'publications exist but no current pointer is set' });
+    }
+    // The old mutable Storage objects are not authoritative and are never served by gear-catalog.
+    const legacy = await fetch(`${SUPABASE_URL}/storage/v1/object/info/authenticated/${BUCKET}/${legacyObjectPath(target)}`, { headers: serviceHeaders() });
+    if (legacy.status === 200) info.push({ target, kind: 'legacy_storage_object', message: `recommended-gear/${legacyObjectPath(target)} exists but is NOT the publication channel; only old app builds read it` });
+    await legacy.body?.cancel();
+    targets[target] = t;
   }
-  const leases = await rpc('gear_lease_overview', {});
-  for (const l of leases) if (l.lease_expired) info.push({ target: l.target, kind: 'expired_lease', message: 'a lease expired without release (crash or timeout); the next publish or reconcile replaces it' });
-  // images referenced by the latest publication of each target and by the current draft
+  const intents = await rpc('gear_intent_overview', {});
+  if (intents.expired_uncommitted > 0) info.push({ target: 'all', kind: 'expired_intents', message: `${intents.expired_uncommitted} prepared publication(s) expired without being committed (stale or abandoned reviews; harmless)` });
+  // images referenced by the current publication of each target and by the current draft
   const [draft] = await rest('gear_catalog_drafts?id=eq.main&select=catalog');
   const pubs = await rest('gear_catalog_publications?select=target,document,published_at&order=published_at.desc');
   const latestByTarget = new Map<string, any>();
@@ -511,125 +367,101 @@ async function verify(caller: Caller) {
 }
 
 // ---------------------------------------------------------------- actions
+const COMMIT_ERRORS: Record<string, [number, string]> = {
+  head_changed: [409, 'live_changed'], draft_changed: [409, 'draft_changed'], not_newer: [409, 'live_changed'],
+  mfa_step_up_required: [403, 'mfa_step_up_required'], publisher_required: [403, 'publisher_required'],
+  not_your_operation: [409, 'operation_conflict'], operation_expired: [409, 'operation_expired'], unknown_operation: [404, 'unknown_operation'],
+};
+
+/** Commits a prepared operation WITH THE CALLER'S JWT: the database re-checks who and when. */
+async function commit(caller: Caller, operationId: string, fault: string | null) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/gear_commit_publication`, {
+    method: 'POST', body: JSON.stringify({ p_operation_id: operationId }),
+    headers: { apikey: ANON_KEY, Authorization: `Bearer ${caller.jwt}`, 'Content-Type': 'application/json' },
+  });
+  const text = await res.text();
+  let body: any = null;
+  try { body = text ? JSON.parse(text) : null; } catch { body = text; }
+  if (!res.ok) {
+    const error = dbError(res.status, body, res.statusText);
+    const mapped = COMMIT_ERRORS[error.code];
+    if (mapped) throw new HttpError(mapped[0], mapped[1], error.message.replace(/^[a-z_]+: /, ''));
+    throw error;
+  }
+  if (hasFault(fault, 'response_lost')) {
+    throw new HttpError(502, 'test_response_lost', 'Test fault: the commit succeeded, but this response is reported as lost');
+  }
+  return { ...body, storage: 'committed' };
+}
+
 async function publish(caller: Caller, body: any, fault: string | null) {
   const target = body.target;
   requirePublisher(caller, target);
   if (target === 'production' && body.confirmation !== CONFIRMATION) throw new HttpError(400, 'confirmation_required', `Type ${CONFIRMATION} to publish to Production`);
-  return withLease(target, async (token, keepLease, deadline) => {
-    const storage: any = await inspectStorage(target, { repair: true, token, jwt: caller.jwt, userId: caller.id, fault, deadline });
-    if (storage.state === 'drift' && storage.futureIncident) {
-      await rpc('gear_audit', { p_actor: caller.id, p_event: 'incident_future_timestamp_blocked_publish', p_detail: { target, digest: storage.originDigest, publishedAt: storage.originPublishedAt } });
-      throw new HttpError(409, 'incident_future_timestamp', `Storage holds a catalog that passes validation stamped ${storage.originPublishedAt}, more than ${MAX_FUTURE_SKEW} s ahead. Publishing is blocked and reported; nothing is overwritten.`, { storage });
-    }
-    if (storage.state === 'drift' && !storage.acknowledged) throw new HttpError(409, 'storage_drift', `${target}: ${storage.reason}. Acknowledge it before publishing.`, { storage });
-    if (storage.state === 'pending') throw new HttpError(409, 'storage_uncertain', `${target}: the previous upload is still unconfirmed; reconcile again`, { storage });
+  const operationId = String(body.operationId ?? '');
+  if (!UUID.test(operationId)) throw new HttpError(400, 'operation_id_required', 'operationId (a UUID the client keeps for retries) is required');
+  const sameRequest = (i: any) => i.user_id === caller.id && i.target === target && i.request_digest === body.reviewDigest;
 
-    const { head } = await loadTarget(target);
-    if ((body.expectedLiveRevision ?? null) !== (head?.revision ?? null)) {
-      throw new HttpError(409, 'live_changed', `${target} changed since you reviewed it (now ${head?.revision ?? 'nothing published'})`);
-    }
-    const r = await computeReview(target, { rollbackOf: body.rollbackOf ?? null });
-    if (!body.rollbackOf && body.draftVersion !== r.draftVersion) {
-      throw new HttpError(409, 'draft_changed', `The draft is now version ${r.draftVersion}; you reviewed version ${body.draftVersion}`);
-    }
-    if (body.reviewDigest !== r.reviewDigest) {
-      throw new HttpError(409, 'review_stale', 'What would be published differs from what you reviewed (draft, baseline, approvals or rollback source changed). Run the checks again.');
-    }
-    if (r.errors.length) throw new HttpError(422, 'invalid', 'The catalog cannot be published', { errors: r.errors });
-    const { brands, draftVersion, rollbackOf, latest, foreignMayBeAccepted } = r;
+  // A retry of a known operation never prepares another publication: it commits or returns the original.
+  const known = await rpc('gear_find_intent', { p_operation_id: operationId });
+  if (known) {
+    if (!sameRequest(known)) throw new HttpError(409, 'operation_conflict', 'This operation ID belongs to a different request');
+    return commit(caller, operationId, fault);
+  }
 
-    const now = Math.floor(Date.now() / 1000);
-    const highest = Math.max(head?.published_at ?? 0, foreignMayBeAccepted ? storage.originPublishedAt ?? 0 : 0);
-    if (highest > now + MAX_FUTURE_SKEW) throw new HttpError(409, 'live_in_future', `${target} publishedAt ${highest} is more than ${MAX_FUTURE_SKEW} s ahead; resolve the clock problem first`);
+  const { head } = await loadTarget(target);
+  if ((body.expectedLiveRevision ?? null) !== (head?.revision ?? null)) {
+    throw new HttpError(409, 'live_changed', `${target} changed since you reviewed it (now ${head?.revision ?? 'nothing published'})`);
+  }
+  const r = await computeReview(target, { rollbackOf: body.rollbackOf ?? null });
+  if (!body.rollbackOf && body.draftVersion !== r.draftVersion) {
+    throw new HttpError(409, 'draft_changed', `The draft is now version ${r.draftVersion}; you reviewed version ${body.draftVersion}`);
+  }
+  if (body.reviewDigest !== r.reviewDigest) {
+    throw new HttpError(409, 'review_stale', 'What would be published differs from what you reviewed (draft, baseline, approvals or rollback source changed). Run the checks again.');
+  }
+  if (r.errors.length) throw new HttpError(422, 'invalid', 'The catalog cannot be published', { errors: r.errors });
 
-    const publishedAt = Math.max(now, highest + 1);
-    const document = { schemaVersion: 1, revision: crypto.randomUUID(), publishedAt, brands };
-    const errors = collectIssues(document).errors;
-    if (errors.length) throw new HttpError(422, 'invalid', 'The catalog cannot be published', { errors });
-    const bytes = encodeCatalog(document);
-    const used = (await rest(`gear_catalog_publications?target=eq.${target}&select=revision`)).map((x: any) => x.revision);
-    let baselineDoc: any = r.baselineDoc;
-    try {
-      parseBytes(bytes);
-      const liveBytes = r.baselineBytes;
-      if (liveBytes) {
-        baselineDoc = JSON.parse(new TextDecoder().decode(liveBytes));
-        if (foreignMayBeAccepted && storage.originRevision) used.push(storage.originRevision);
-        if (checkSuccessor(baselineDoc, liveBytes, document, bytes, used) !== 'newer') throw new CatalogRejected('identical to the live publication');
-      }
-    } catch (error) {
-      if (error instanceof CatalogRejected) throw new HttpError(422, 'invalid', error.message);
-      throw error;
+  const now = Math.floor(Date.now() / 1000);
+  const current = r.head?.published_at ?? 0;
+  if (current > now + MAX_FUTURE_SKEW) throw new HttpError(409, 'live_in_future', `${target} publishedAt ${current} is more than ${MAX_FUTURE_SKEW} s ahead; resolve the clock problem first`);
+  const document = { schemaVersion: 1, revision: crypto.randomUUID(), publishedAt: Math.max(now, current + 1), brands: r.brands };
+  const errors = collectIssues(document).errors;
+  if (errors.length) throw new HttpError(422, 'invalid', 'The catalog cannot be published', { errors });
+  const bytes = encodeCatalog(document);
+  try {
+    parseBytes(bytes);
+    if (r.baselineBytes) {
+      const used = (await rest(`gear_catalog_publications?target=eq.${target}&select=revision`)).map((x: any) => x.revision);
+      if (checkSuccessor(r.baselineDoc, r.baselineBytes, document, bytes, used) !== 'newer') throw new CatalogRejected('identical to the live publication');
     }
-    void latest;
-    const digest = await sha256(bytes);
-    const summary = summarize(diffCatalogs(baselineDoc, document));
-    await pause(fault, 'before_record');
-    const publicationId = await rpc('gear_record_publication', {
-      p_token: token, p_target: target, p_expected_head_revision: head?.revision ?? null, p_revision: document.revision,
-      p_published_at: publishedAt, p_document: new TextDecoder().decode(bytes), p_digest: digest, p_summary: summary,
-      p_draft_version: draftVersion, p_rollback_of: rollbackOf, p_validator_version: VALIDATOR_VERSION,
-      p_published_by: caller.id, p_auth_aal: caller.aal, p_auth_amr: caller.amr,
-    });
-    const result = { target, publicationId, revision: document.revision, publishedAt, digest, bytes: bytes.length, summary };
-    if (hasFault(fault, 'crash_after_commit')) {
-      keepLease(); // a crashed process would not release its lease; it expires
-      throw new HttpError(500, 'test_crash_after_commit', 'Test fault: stopped after the database commit, before the Storage upload', { revision: document.revision });
-    }
-    await pause(fault, 'after_commit');
-    try {
-      await upload(target, bytes, fault, { jwt: caller.jwt, userId: caller.id, token, target, publicationId, deadline, fault });
-    } catch (error) {
-      if (error instanceof StorageRejected) {
-        // Storage refused this write (stale lease, object changed since it was read, or step-up
-        // expired). Try to record it; if the lease is gone that fails too, which is correct: a stale
-        // process may not finalize database state either.
-        await rpc('gear_record_status', { p_token: token, p_publication_id: publicationId, p_status: 'refused', p_note: 'Storage refused the write before the upload (RLS); nothing stored' }).catch(() => {});
-        throw new HttpError(409, 'storage_write_rejected', 'Storage rejected the write: the lease expired, the object changed since it was read, or the MFA step-up expired. Nothing was overwritten.', { revision: document.revision });
-      }
-      if (!(error instanceof UploadUncertain)) throw error;
-      await rpc('gear_record_status', { p_token: token, p_publication_id: publicationId, p_status: 'uncertain', p_note: error.message });
-      return { ...result, storage: 'uncertain', note: error.message };
-    }
-    const readBack = await readOrigin(target);
-    const verified = !!readBack && (await sha256(readBack)) === digest;
-    await rpc('gear_record_status', { p_token: token, p_publication_id: publicationId, p_status: verified ? 'verified' : 'conflict', p_note: verified ? 'origin read-back matches' : 'origin holds different bytes after upload' });
-    return { ...result, storage: verified ? 'verified' : 'conflict' };
-  });
-}
+  } catch (error) {
+    if (error instanceof CatalogRejected) throw new HttpError(422, 'invalid', error.message);
+    throw error;
+  }
 
-async function reconcile(caller: Caller, body: any, fault: string | null) {
-  requirePublisher(caller, body.target);
-  return withLease(body.target, (token, _keep, deadline) => inspectStorage(body.target, { repair: true, token, jwt: caller.jwt, userId: caller.id, fault, deadline }));
-}
-
-async function acknowledge(caller: Caller, body: any) {
-  requirePublisher(caller, body.target);
-  return withLease(body.target, async (token) => {
-    const storage: any = await inspectStorage(body.target);
-    if (storage.state !== 'drift' || storage.originDigest !== body.digest) throw new HttpError(409, 'drift_changed', 'Storage changed since you reviewed it');
-    if (storage.futureIncident) {
-      await rpc('gear_audit', { p_actor: caller.id, p_event: 'drift_future_timestamp_refused', p_detail: { target: body.target, digest: body.digest, publishedAt: storage.originPublishedAt } });
-      throw new HttpError(409, 'drift_future_timestamp', 'A catalog that passes validation with a far-future publishedAt is an incident: not acknowledged, publishing stays blocked', { storage });
-    }
-    await rpc('gear_record_drift_ack', { p_token: token, p_target: body.target, p_digest: body.digest, p_foreign_revision: storage.originRevision,
-      p_foreign_published_at: storage.originPublishedAt, p_passes_validation: storage.passesValidation, p_validation_error: storage.validationError, p_acknowledged_by: caller.id });
-    return { acknowledged: true, passesValidation: storage.passesValidation };
-  });
+  const intent = await rpc('gear_prepare_intent', { p: {
+    operation_id: operationId, target, user_id: caller.id, request_digest: body.reviewDigest, revision: document.revision,
+    published_at: document.publishedAt, document: new TextDecoder().decode(bytes), digest: await sha256(bytes),
+    summary: summarize(diffCatalogs(r.baselineDoc, document)), expected_publication_id: r.current?.id ?? null,
+    draft_version: r.draftVersion, rollback_of: r.rollbackOf, validator_version: VALIDATOR_VERSION,
+  } });
+  // A concurrent duplicate may have prepared this operation first: use its intent, if it is the same request.
+  if (!intent.created && !sameRequest(intent)) throw new HttpError(409, 'operation_conflict', 'This operation ID belongs to a different request');
+  await pause(fault, 'before_commit'); // local tests: a publisher delayed between validation and commit
+  return commit(caller, operationId, fault);
 }
 
 async function inspect(caller: Caller, body: any) {
   requireAdmin(caller);
-  const result: any = await inspectStorage(body.target);
-  if (result.state === 'drift' && result.acknowledged && result.passesValidation) {
-    const origin = await readOrigin(body.target);
-    result.baseline = { source: 'acknowledged_storage', document: origin ? JSON.parse(new TextDecoder().decode(origin)) : null };
-  } else {
-    const { latest } = await loadTarget(body.target);
-    result.baseline = { source: 'recorded', document: latest ? JSON.parse(latest.document) : null };
-  }
-  if (TEST_FAULTS) result.diagnostics = { serviceCredential: SERVICE_KEY.startsWith('sb_secret_') ? 'secret_key' : 'legacy_service_role_jwt' };
-  return result;
+  const { head, current } = await loadTarget(body.target);
+  return {
+    target: body.target, state: current ? 'in_sync' : 'empty', channel: 'database',
+    endpoint: `/functions/v1/gear-catalog/${body.target}`,
+    current: current ? { id: current.id, revision: current.revision, publishedAt: current.published_at, digest: current.digest } : null,
+    latestRevision: head?.revision ?? null, latestStatus: current ? 'committed' : null,
+    baseline: { source: 'current_publication', document: current ? JSON.parse(current.document) : null },
+  };
 }
 
 Deno.serve(async (req) => {
@@ -653,8 +485,6 @@ Deno.serve(async (req) => {
     switch (body.action) {
       case 'publish': return json(200, await publish(caller, body, fault));
       case 'rollback': return json(200, await publish(caller, { ...body, rollbackOf: body.publicationId }, fault));
-      case 'reconcile': return json(200, await reconcile(caller, body, fault));
-      case 'acknowledge': return json(200, await acknowledge(caller, body));
       case 'inspect': return json(200, await inspect(caller, body));
       case 'review': return json(200, await review(caller, body));
       default: throw new HttpError(400, 'bad_action', 'Unknown action');
