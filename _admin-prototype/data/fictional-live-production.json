@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "revision": "prototype-seed-production-1",
+  "publishedAt": 1794000000,
+  "brands": [
+    {
+      "id": "example-fuel-tools",
+      "kind": "brand",
+      "name": "Example Fuel Tools",
+      "tagline": "Fictional fuel-system tools",
+      "description": "An invented brand used to try editing, ordering and offers in the prototype.",
+      "ctaTitle": "View Example Products",
+      "destinationURL": "https://example.com/fuel-tools",
+      "priceText": "From $49",
+      "more": {
+        "subtitle": "Prototype More card"
+      }
+    },
+    {
+      "id": "rvp-supply-oem-beadlocks",
+      "kind": "rvp_wheels",
+      "name": "Sample Wheel Sponsor",
+      "tagline": "Placeholder sponsor tagline",
+      "description": "Nine sample wheel designs for the prototype, or build your own.",
+      "accessibilityDescription": "Sample sponsor wheels.",
+      "ctaTitle": "View All Sample Wheels",
+      "destinationURL": "https://example.com/sponsor/wheels",
+      "homepageURL": "https://example.com/sponsor",
+      "configuratorURL": "https://example.com/sponsor/configure",
+      "footnote": "Fictional prototype data \u00b7 Not real product information",
+      "more": {
+        "subtitle": "Placeholder More subtitle"
+      },
+      "wheels": [
+        {
+          "id": "oem-hellcat",
+          "displayName": "Sample Wheel 1",
+          "accessibilityName": "Sample Wheel 1",
+          "productURL": "https://example.com/sponsor/wheels/1"
+        },
+        {
+          "id": "oem-hellcat-v2",
+          "displayName": "Sample Wheel 2",
+          "accessibilityName": "Sample Wheel 2",
+          "productURL": "https://example.com/sponsor/wheels/2"
+        },
+        {
+          "id": "oem-hellcat-redeye",
+          "displayName": "Sample Wheel 3",
+          "accessibilityName": "Sample Wheel 3",
+          "productURL": "https://example.com/sponsor/wheels/3"
+        },
+        {
+          "id": "5-spoke-hellcat",
+          "displayName": "Sample Wheel 4",
+          "accessibilityName": "Sample Wheel 4",
+          "productURL": "https://example.com/sponsor/wheels/4"
+        },
+        {
+          "id": "5-spoke-hellcat-v2",
+          "displayName": "Sample Wheel 5",
+          "accessibilityName": "Sample Wheel 5",
+          "productURL": "https://example.com/sponsor/wheels/5"
+        },
+        {
+          "id": "oem-demon",
+          "displayName": "Sample Wheel 6",
+          "accessibilityName": "Sample Wheel 6",
+          "productURL": "https://example.com/sponsor/wheels/6"
+        },
+        {
+          "id": "hollow-5-spoke",
+          "displayName": "Sample Wheel 7",
+          "accessibilityName": "Sample Wheel 7",
+          "productURL": "https://example.com/sponsor/wheels/7"
+        },
+        {
+          "id": "chrome-oem-hellcat",
+          "displayName": "Sample Wheel 8",
+          "accessibilityName": "Sample Wheel 8",
+          "productURL": "https://example.com/sponsor/wheels/8"
+        },
+        {
+          "id": "oem-widebody",
+          "displayName": "Sample Wheel 9",
+          "accessibilityName": "Sample Wheel 9",
+          "productURL": "https://example.com/sponsor/wheels/9"
+        }
+      ]
+    }
+  ]
+}
