@@ -132,20 +132,24 @@ test('B8: authorization changes are enforced: no aal2, an editor, a removed or s
   assert.equal((await fn(publisher, { action: 'reconcile', target: 'staging' })).data.state, 'repaired');
 });
 
-test('B9 (documented limitation): a holder of a live, unspent grant could write different bytes of the same size', async () => {
-  // Storage checks RLS before the bytes arrive, with only the client-declared length. Grants are
-  // issued only to gear-publish (service role), never readable by clients before use, consumed
-  // after each write, and any such write is detected as drift. This test pins that boundary.
+test('B9: different bytes of the same size with a live grant: refused at commit by the content check (was accepted before the commit guard)', async () => {
+  // The RLS dry run sees only the declared length, so it passes. The candidate commit guard
+  // (migration 20261113220000) compares the stored size and eTag (MD5 of the bytes) with the
+  // recorded publication inside Storage's committing transaction, and refuses.
+  const servedBefore = (await publicRead('staging')).data?.revision;
+  const versionBefore = sql(`select version from storage.objects where bucket_id = 'recommended-gear' and name = 'staging/catalog-v1.json'`);
   const grant = await grantFor('staging');
+  let write;
   try {
     const original = latestDocument('staging');
     const sameSize = original.replace(/"From \$\d{3}"/, '"From $999"');
     assert.equal(Buffer.byteLength(sameSize), Buffer.byteLength(original));
     assert.notEqual(sameSize, original);
-    assert.equal((await directWrite('staging', publisher, grant.nonce, sameSize)).status, 200);
+    write = await directWrite('staging', publisher, grant.nonce, sameSize);
   } finally { await grant.release(); }
-  const drift = (await fn(publisher, { action: 'inspect', target: 'staging' })).data;
-  assert.equal(drift.state, 'drift', 'detected');
-  assert.equal((await fn(publisher, { action: 'acknowledge', target: 'staging', digest: drift.originDigest })).status, 200);
-  assert.equal((await publish(publisher, 'staging')).status, 200);
+  assert.equal(write.status, 500, JSON.stringify(write.data)); // Storage reports the trigger's PT403 as a DatabaseError
+  assert.match(JSON.stringify(write.data), /PT403/);
+  assert.equal(sql(`select version from storage.objects where bucket_id = 'recommended-gear' and name = 'staging/catalog-v1.json'`), versionBefore, 'row unchanged');
+  assert.equal((await publicRead('staging')).data?.revision, servedBefore, 'served bytes unchanged');
+  assert.equal((await fn(publisher, { action: 'inspect', target: 'staging' })).data.state, 'in_sync');
 });

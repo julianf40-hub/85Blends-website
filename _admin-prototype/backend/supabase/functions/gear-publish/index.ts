@@ -106,10 +106,48 @@ async function upload(target: string, bytes: Uint8Array, fault: string | null, c
   }
 }
 
+/**
+ * Local test fault `stall_body:N`: sends the request line, headers (which is when Storage runs its
+ * permission check) and the first half of the body, waits N ms with the connection open, then sends
+ * the rest. Raw HTTP/1.1 with an explicit Content-Length; no client-side timeout at any point, so
+ * whatever happens next is the server's own behavior.
+ */
+async function stalledUpload(base: string, path: string, bytes: Uint8Array, headers: Record<string, string>, stallMs: number): Promise<Response> {
+  const url = new URL(`${base}${path}`);
+  const conn = await Deno.connect({ hostname: url.hostname, port: Number(url.port || 80) });
+  const head = [`POST ${url.pathname} HTTP/1.1`, `Host: ${url.host}`, `Content-Length: ${bytes.length}`, 'Connection: close',
+    ...Object.entries(headers).map(([k, v]) => `${k}: ${v}`), '', ''].join('\r\n');
+  const half = Math.floor(bytes.length / 2);
+  await conn.write(new TextEncoder().encode(head));
+  await conn.write(bytes.slice(0, half));
+  console.log(JSON.stringify({ gearTest: 'stall_body', phase: 'stalled', sentBytes: half, totalBytes: bytes.length, at: Date.now() }));
+  await new Promise((r) => setTimeout(r, stallMs));
+  await conn.write(bytes.slice(half));
+  console.log(JSON.stringify({ gearTest: 'stall_body', phase: 'resumed', at: Date.now() }));
+  const chunks: Uint8Array[] = [];
+  const buf = new Uint8Array(65536);
+  for (;;) { const n = await conn.read(buf); if (n === null) break; chunks.push(buf.slice(0, n)); }
+  conn.close();
+  const text = new TextDecoder().decode(new Uint8Array(chunks.flatMap((c) => [...c])));
+  const status = Number(/^HTTP\/1\.1 (\d{3})/.exec(text)?.[1] ?? 0);
+  const body = text.split('\r\n\r\n').slice(1).join('\r\n\r\n');
+  return new Response(body.replace(/^[0-9a-f]+\r\n|\r\n0\r\n\r\n$/g, ''), { status });
+}
+
 async function uploadWithGrant(target: string, bytes: Uint8Array, fault: string | null, ctx: WriteContext, nonce: string) {
   if (hasFault(fault, 'upload_timeout')) throw new UploadUncertain('upload timed out before Storage answered (test fault: not stored)');
+  // stall_body: through the API gateway (local Kong buffers the whole body before forwarding, so
+  // Storage authorizes only after the stall). stall_body_direct: straight to the local Storage
+  // service, modelling a gateway that streams the body (Storage authorizes on the headers).
+  const stall = faultParts(fault).map((f) => /^stall_body(_direct)?:(\d{1,6})$/.exec(f)).find(Boolean);
   let res: Response;
-  try {
+  if (stall) {
+    const [base, prefix] = stall[1] ? ['http://storage:5000', ''] : [SUPABASE_URL, '/storage/v1'];
+    res = await stalledUpload(base, `${prefix}/object/${BUCKET}/${objectPath(target)}`, bytes, {
+      apikey: ANON_KEY, Authorization: `Bearer ${ctx.jwt}`, 'Content-Type': 'application/json', 'Cache-Control': 'max-age=60',
+      'x-upsert': 'true', 'x-metadata': b64(JSON.stringify({ gear_write: nonce })),
+    }, Number(stall[2]));
+  } else try {
     res = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${objectPath(target)}`, {
       method: 'POST', body: bytes,
       headers: {
@@ -127,6 +165,9 @@ async function uploadWithGrant(target: string, bytes: Uint8Array, fault: string 
     // RLS refusal: stale lease token, object changed since it was read (CAS), not the aal2 publisher,
     // or (Production) TOTP step-up expired. Storage kept the previous object version.
     if ((res.status === 400 || res.status === 403) && /row-level security|Unauthorized|policy/i.test(text)) throw new StorageRejected(text);
+    // Candidate commit guard (migration 20261113220000): Storage reports the trigger's PT403 as a
+    // 500 DatabaseError without its message. The row was not written; the served object is unchanged.
+    if (res.status === 500 && /code: PT403/.test(text)) throw new StorageRejected(`refused at commit by the catalog commit guard: ${text}`);
     throw new HttpError(502, 'upload_refused', `Storage refused the upload: HTTP ${res.status} ${text}`);
   }
   if (hasFault(fault, 'response_lost')) throw new UploadUncertain('response lost after the body was sent (test fault: stored)');

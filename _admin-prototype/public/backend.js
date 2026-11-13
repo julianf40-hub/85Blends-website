@@ -85,7 +85,10 @@ export function createSupabaseBackend(cfg) {
   }
   async function accessToken() {
     if (!session) throw expired('Sign in to continue.');
-    if (session.expires_at * 1000 - Date.now() < 60_000) await refresh(); // refresh shortly before expiry
+    // Refresh shortly before expiry: a quarter of the token's lifetime, at most 60 s.
+    const c = claims();
+    const margin = Math.min(60, Math.max(5, Math.floor((c.exp - c.iat) / 4))) * 1000;
+    if (session.expires_at * 1000 - Date.now() < margin) await refresh();
     return session.access_token;
   }
   async function call(url, init = {}, retried = false) {

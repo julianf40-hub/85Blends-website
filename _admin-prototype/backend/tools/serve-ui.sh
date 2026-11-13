@@ -3,6 +3,7 @@
 # Only the loopback API URL and the local PUBLISHABLE key reach the page; server.mjs refuses anything else.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+export GEAR_LOCAL_JWT_EXPIRY="${GEAR_LOCAL_JWT_EXPIRY:-3600}" # config.toml reads it; status does not change the running stack
 status="$(supabase status -o json)"
 read_key() { node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s)[process.argv[1]]))' "$1" <<<"$status"; }
 export GEAR_SUPABASE_URL="$(read_key API_URL)"

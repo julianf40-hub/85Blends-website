@@ -5,7 +5,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 const backend = new URL('..', import.meta.url).pathname;
-const env = JSON.parse(execSync('supabase status -o json', { cwd: backend, encoding: 'utf8' }));
+const env = JSON.parse(execSync('supabase status -o json', { cwd: backend, encoding: 'utf8', env: { GEAR_LOCAL_JWT_EXPIRY: '3600', ...process.env } }));
 if (!/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(env.API_URL)) throw new Error('seed-images only runs against a local stack');
 const draft = readFileSync(new URL('../../data/fictional-draft.json', import.meta.url), 'utf8');
 const prefix = 'https://storage.example.invalid/recommended-gear/images/';

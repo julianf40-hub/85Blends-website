@@ -179,9 +179,10 @@ equally powerful defaults. The real containment is therefore:
 - the verifier (§6) watches Storage;
 - **keys are minimized and revocation is verified** (§12, production launch).
 
-If stronger isolation is ever required, the only real options are a separate Supabase project for
-the catalog (the apps read `SUPABASE_URL`, so that is an iOS change, and future Android work) or
-signed catalogs (also an app change).
+If stronger isolation is ever required, the options are a separate Supabase project for the
+catalog (the apps read `SUPABASE_URL`, so that is an iOS change, and future Android work) and
+signed catalogs (also an app change). Signatures **authenticate** content; they do **not** stop an
+older, validly signed publication from overwriting a newer object (§6.1).
 
 ## 6. Publishing across the database and Storage
 
@@ -219,20 +220,75 @@ The implemented design:
    - **RLS cannot bind content.** It binds who, where, when, which lease/publication and the
      declared size, not the bytes;
    - the fencing and compare-and-swap checks are **check-then-act**: they hold when an upload
-     starts. The function refuses to start an upload unless the lease outlives the upload timeout
-     plus a margin, which bounds the window; detection (read-back, inspect, the verifier) covers
-     the rest.
+     starts, not when it commits. **This is a blocker, not a bounded window** (§6.1): the
+     publication-safety review reproduced a publisher overwriting a newer verified publication
+     after its lease expired, and two simultaneous requests both using one grant. The function's
+     lease-margin check only stops it *starting* late; it cannot stop a started upload from
+     committing late, and it is not a protection.
 
    Also found at `f7d2a3c` and fixed: the publisher could read `lease_token` over REST and upload
    arbitrary bytes directly. Now the token is hidden, writes need a grant, and expired, released,
    replayed, cross-environment, cross-path, wrong-size, wrong-user and role-changed grants are
    refused (backend `tests/bypass.test.mjs`, B1–B9).
 
-   **Still enforced only by the function** (a caller with a live, unspent grant could upload
-   different bytes of the same size; this is pinned by test B9 and is detected as drift):
+   **Still enforced only by the function** without the candidate commit guard (§6.1); with it,
+   size, content and ordering are re-checked at commit (B9 now refused locally):
    full v1 validation, the successor and ordering checks, partner approvals, image checks,
    byte-equality with the recorded publication, the Production confirmation and review digest,
    and session revocation.
+### 6.1 Publication-safety review at `ba3cfab` (local; blocker found; candidate fix)
+
+Reproduced exactly as requested (`backend/tests/publication_safety.test.mjs`; evidence in the
+backend README):
+
+| # | Scenario | Without a commit-time check | With the candidate commit guard |
+|---|---|---|---|
+| PS1a | A pauses mid-body, lease expires, B reconciles, publishes and verifies, A resumes; **through the local gateway** | Safe, **but only because local Kong buffers the whole body**, so Storage authorizes after the pause (A refused at authorization) | Safe |
+| PS1b | Same, with Storage receiving a streamed body (authorized on the headers, as Storage itself does) | **Unsafe:** Storage serves A's **older** document while the head says B. A's function returns `lease_lost`, which does not tell its operator that A's bytes landed. Detected as drift afterwards | **Safe:** A refused at commit; Storage serves B; `in_sync` |
+| PS2 | Two simultaneous requests with one grant | **Both succeed** (via the gateway and direct). Consumption ran only afterwards, in the function; nothing persists in the rolled-back dry run | **Exactly one succeeds** (10 alternating rounds plus 2 single runs); the grant is deleted in the committing transaction |
+
+**Blocker:** Storage authorizes before the body and commits as a superuser with no RLS and no
+version condition (`storage-api` `Uploader.completeUpload`: `upsertObject`, `ON CONFLICT DO
+UPDATE`). A lease, fencing token, RLS policy or timing margin checked *before* the body cannot
+order commits. Whether hosted Storage authorizes on the headers depends on whether the hosted
+gateway streams request bodies; local Kong buffers. That must not be relied on either way.
+
+**Alternatives (none is a timing margin):**
+1. **Commit-time guard trigger on `storage.objects`** (candidate, implemented locally:
+   `migrations/20261113220000_gear_commit_guard.sql`). It is a BEFORE INSERT/UPDATE trigger, so
+   it runs inside Storage's committing transaction (superuser writes do not bypass triggers),
+   under Storage's per-object lock. It consumes the grant atomically (`DELETE … RETURNING`) and
+   re-checks the live lease, the uploader, compare-and-swap against the prepared version, the
+   **stored** size, and the stored eTag against the MD5 of the recorded publication. It decides
+   on the proposed row in the INSERT phase, because an overwrite that omits `user_metadata`
+   keeps the old row's value. Key-holder writes (no grant nonce) are not blocked: they remain
+   detected drift. **Depends on hosted facts not yet verified:**
+   - that a project can create, replace and remove such a trigger (`storage.objects` is owned by
+     `supabase_storage_admin`; locally `postgres` holds TRIGGER but cannot disable it);
+   - that hosted Storage still writes through this upsert path;
+   - that the hosted eTag is the MD5 of the bytes (not true for S3 multipart or some encryption
+     modes);
+   - that TUS and S3-protocol uploads reach the same trigger (they write the same table, but this
+     is untested).
+
+   It also couples correctness to Storage internals, which can change between versions.
+2. **The database is the source of truth for "latest":** apps read the latest verified
+   publication from the database (an Edge Function or a PostgREST RPC, cacheable). Storage keeps
+   immutable, content-addressed publication files that are never overwritten (insert-only,
+   which is already enforced for images). Commit order is then a database transaction. This is
+   an app change (iOS, and future Android) and a caching design.
+3. **Immutable per-revision objects plus a small pointer object.** This only moves the
+   overwrite problem to the pointer, unless the pointer is guarded by 1 or served by 2.
+4. **Signed catalogs plus monotonic acceptance on clients.** Signatures authenticate content
+   but **do not** stop an older valid signed publication from overwriting a newer object.
+   Clients that already hold the newer document reject the older one by `publishedAt` (the
+   existing v1 rule), but new installs and cold caches accept it. This limits device impact
+   only; the served bytes are still wrong.
+
+Recommendation: decide this before hosted testing (new decision D10). Option 1 is the smallest
+change if the hosted checks pass. Option 2 removes the dependency on Storage internals at the
+cost of an app change.
+
 4. **Stamp** `max(now, head + 1, floor)` with a ±300 s guard. **Record** history with status
    `recorded`. **Upload, read back**, and record `verified`, `uncertain` or `conflict`.
 5. **Reconcile** reads first and makes at most one re-send per call (no retry loop). It re-sends
@@ -300,8 +356,11 @@ The scheduled verifier (proposed: every 5 minutes) is **detection only**.
 - direct SQL as `postgres`;
 - the Supabase platform itself.
 
-**Residual risk:** a bypassing write can be served until it is detected and superseded. The only
-complete prevention against privileged writers is signed catalogs, an app change.
+**Residual risk:** a bypassing write can be served until it is detected and superseded.
+Signed catalogs (an app change) would make clients reject content that was not signed by the
+publisher. They would **not** prevent an older, validly signed publication from being written
+over a newer one, and they would not stop clients with no newer copy from accepting it. Ordering
+needs a commit-time check (§6.1, option 1) or a database-served pointer (option 2).
 
 ## 7. Drafts, history, images
 
@@ -451,6 +510,13 @@ TOTP. Not implemented: magic-link sign-in, scheduling the verifier, and image re
   `x-metadata` in `user_metadata`, and `amr` in policies;
 - magic-link email delivery;
 - scheduled verifier execution (cron);
+- **D10 commit guard:** whether a project can create, replace and remove a trigger on
+  `storage.objects`; that hosted Storage commits through the same upsert; that the hosted eTag is
+  the MD5 of the bytes; and that TUS and S3-protocol uploads hit the trigger. Rerun
+  `publication_safety.test.mjs` PS1b/PS2 against the hosted Storage;
+- whether the hosted gateway buffers or streams upload bodies (local Kong buffers, which masked
+  PS1 through the gateway);
+- PostgREST's accepted clock skew on expired JWTs (about 30 s locally);
 - CORS on hosted functions (locally the gateway answers preflight itself; the function's own
   Origin check is what the tests rely on);
 - the Storage API's dry-run RLS and `x-metadata` behavior on the hosted version, and S3 multipart
@@ -521,19 +587,27 @@ creates, changes or uses a live credential.
 | D2 | Far-future incident recovery | Restore the previous bytes, a forward-stamped correction, or an app change capping accepted skew (default stays block and report) | Production launch |
 | D3 | Admin URL and deploy method | `<project>.pages.dev` with Access (no DNS change) vs a custom hostname (DNS change); Cloudflare Git integration vs a direct upload with a Pages-only token | Hosting the frontend |
 | D4 | Hosted non-production environment for tier B's hosted-only checks | Free-plan project vs a Pro branch | Backend staging, hosted part |
-| D5 | Production step-up window and JWT lifetime | Proposed 900 s step-up and a short access-token expiry (revocation is function-only, §4) | Production launch |
+| D5 | Production step-up window and JWT lifetime | Proposed 900 s step-up and a short access-token expiry (revocation is function-only, §4). Measured locally: PostgREST accepts an expired JWT for about 30 s after `exp` (refused from +32 s), and a revoked but unexpired JWT until then | Production launch |
 | D6 | HEIF uploads | Stay disabled until a server-side decoder and dimension checks exist | Optional |
 | D7 | Future-timestamp warning in `validate_catalog.py` | Separate iOS tooling PR (`docs/proposals/validator-future-timestamp.md`) | Optional |
-| D8 | Signed catalogs (the only full prevention against key holders) | App change on iOS (and Android when enabled) | Optional, long term |
+| D8 | Signed catalogs: authenticate content against key holders and tampering. Does **not** prevent an older valid signed publication from overwriting a newer one (needs D10) | App change on iOS (and Android when enabled) | Optional, long term |
+| D10 | Commit ordering for catalog writes (§6.1 blocker) | Commit-guard trigger on `storage.objects` (candidate, local) vs serving "latest" from the database (app change) | **Before hosted testing** |
 | D9 | Retention of unreferenced images | e.g. report after 30 days, delete manually | Before image uploads ship |
 
 ## 14. Verification in this session
 
 ### Backend branch (local stack, fictional data)
 
-- `node --test --test-concurrency=1 _admin-prototype/backend/tests/*.test.mjs`: **47 / 47**
+- **Publication-safety review (this round):** `tests/publication_safety.test.mjs` reproduces the
+  §6.1 blocker (unguarded variants) and shows the candidate commit guard closing it. The full
+  suite is **54 / 54**.
+- Browser run **18 / 18**, 7 consecutive, with a 60 s token lifetime. It adds drift
+  acknowledgement, real access-token expiry and revocation-then-expiry. The rollback-step timeout
+  seen once earlier is **unresolved** (not reproduced in 15 runs; cause not identified;
+  diagnostics added).
+- Earlier: `node --test --test-concurrency=1 _admin-prototype/backend/tests/*.test.mjs`: 47 / 47
   (backend, bypass B1–B9, review binding, origin, images, verifier).
-- `node _admin-prototype/backend/tools/ui-local-supabase.mjs`: **15 / 15** browser checks:
+- Earlier: `node _admin-prototype/backend/tools/ui-local-supabase.mjs`: 15 / 15 browser checks:
   sign-in + TOTP enrollment, wrong code, outsider refused, simulated API disabled, draft conflict,
   draft-version and review-digest binding, Staging publish, Production step-up expiry and fresh
   code, reconcile of an uncertain upload, rollback, image upload with HEIF refused (browser and

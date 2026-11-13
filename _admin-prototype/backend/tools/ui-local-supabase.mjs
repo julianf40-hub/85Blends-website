@@ -9,7 +9,7 @@ import { spawn } from 'node:child_process';
 import { deflateSync, crc32 } from 'node:zlib';
 import { mkdirSync } from 'node:fs';
 import assert from 'node:assert/strict';
-import { ENV, resetLocalDatabase, totp, sleep, fn, sql } from '../tests/helpers.mjs';
+import { ENV, resetLocalDatabase, totp, sleep, fn, sql, serviceWrite, publicRead } from '../tests/helpers.mjs';
 import { USERS, LOCAL_TEST_PASSWORD } from './make-seed.mjs';
 
 const { chromium } = createRequire(import.meta.url)('playwright');
@@ -17,12 +17,15 @@ const BASE = 'http://127.0.0.1:4174';
 const SHOTS = process.argv[2] ?? null;
 const STEP_UP_SECONDS = 40; // GEAR_PRODUCTION_STEP_UP_SECONDS in supabase/config.toml
 const results = [];
+let phase = ''; // the wait currently in progress (named in failure output)
+const fnLog = []; // every gear-publish response seen by session A
+const at = (name) => { phase = name; };
 const step = async (name, run) => {
   const started = Date.now();
   try { await run(); results.push({ name, ok: true, ms: Date.now() - started }); console.log(`ok   ${name}`); }
   catch (error) {
     results.push({ name, ok: false, error: error.message });
-    console.log(`FAIL ${name}\n     ${error.message.split('\n')[0]}`);
+    console.log(`FAIL ${name}\n     ${error.message.split('\n')[0]}\n     phase: ${phase}\n     last gear-publish responses (A): ${JSON.stringify(fnLog.slice(-8))}`);
     for (const [who, p] of [['A', A], ['B', Bp]]) {
       const state = await p.evaluate(() => ({ toasts: [...document.querySelectorAll('#toasts .toast')].map((t) => t.textContent), dialog: document.querySelector('#dialog[open]')?.textContent?.replace(/\s+/g, ' ').slice(0, 600) ?? null })).catch(() => null);
       console.log(`     ${who}:`, JSON.stringify(state));
@@ -50,13 +53,20 @@ const tab = (page, name) => page.click(`[data-action=tab][data-tab=${name}]`);
 const sessionOf = (page) => page.evaluate(() => JSON.parse(sessionStorage.getItem('gear-admin-local-session')));
 async function shot(page, name) { if (SHOTS) await page.screenshot({ path: `${SHOTS}/${name}.png` }); }
 
-async function signIn(page, who) {
+const lastCode = {};
+async function freshCode(secret) { // never reuse a TOTP code: wait for the next 30 s window if needed
+  while (lastCode[secret] === Math.floor(Date.now() / 30000)) await sleep(500);
+  lastCode[secret] = Math.floor(Date.now() / 30000);
+  return totp(secret);
+}
+async function signIn(page, who, knownSecret = null) {
   await page.goto(BASE);
   await page.fill('input[name=email]', USERS[who].email);
   await page.fill('input[name=password]', LOCAL_TEST_PASSWORD);
   await page.click('form[data-form=sign-in] button[type=submit]');
-  const secret = (await page.textContent('[data-testid=totp-secret]', { timeout: 15000 })).trim();
-  await page.fill('form[data-form=totp] input[name=code]', totp(secret));
+  await page.waitForSelector('form[data-form=totp]', { timeout: 15000 });
+  const secret = knownSecret ?? (await page.textContent('[data-testid=totp-secret]', { timeout: 15000 })).trim();
+  await page.fill('form[data-form=totp] input[name=code]', await freshCode(secret));
   const verifiedAt = Date.now();
   await page.click('form[data-form=totp] button[type=submit]');
   return { secret, verifiedAt };
@@ -85,6 +95,13 @@ const ctxB = await browser.newContext({ viewport: { width: 1440, height: 1000 } 
 const A = await ctxA.newPage(); // publisher
 const Bp = await ctxB.newPage(); // editor
 for (const p of [A, Bp]) p.on('pageerror', (e) => console.log('pageerror:', e.message));
+A.on('response', async (res) => {
+  if (!res.url().includes('/functions/v1/gear-publish')) return;
+  let action = null; try { action = JSON.parse(res.request().postData() ?? '{}').action ?? new URL(res.url()).searchParams.get('action'); } catch { /* binary */ }
+  let error = null; try { error = res.status() >= 400 ? (await res.json()).error : null; } catch { /* no body */ }
+  fnLog.push({ t: new Date().toISOString().slice(11, 23), action, status: res.status(), error });
+});
+const lifetimeOf = (s) => { const c = JSON.parse(Buffer.from(s.access_token.split('.')[1], 'base64url')); return c.exp - c.iat; };
 let aTotp;
 
 try {
@@ -182,7 +199,7 @@ try {
     assert.match(await A.textContent('#dialog'), /TOTP verification within the last 40 s/);
     assert.equal(sql(`select count(*) from public.gear_catalog_publications where target = 'production'`), '0', 'nothing recorded before step-up');
     await shot(A, '04-production-step-up');
-    await A.fill('#dialog input[name=code]', totp(aTotp.secret));
+    await A.fill('#dialog input[name=code]', await freshCode(aTotp.secret));
     await A.click('#dialog button[type=submit]');
     await A.waitForSelector('[data-testid=result-production]', { timeout: 20000 });
     assert.match(await A.textContent('[data-testid=result-production]'), /verified/);
@@ -190,6 +207,7 @@ try {
 
   await step('reconcile: an uncertain upload is detected and repaired from the browser', async () => {
     await editField(A, 'tagline', 'Change that will hit an upload timeout');
+    await A.reload(); await A.waitForSelector('#brand-list li'); // the adapter refreshes a token near expiry
     const { access_token: token } = await sessionOf(A);
     const draftVersion = Number(sql(`select version from public.gear_catalog_drafts`));
     const head = sql(`select revision from public.gear_publication_head where target = 'staging'`);
@@ -206,18 +224,55 @@ try {
   });
 
   await step('rollback (staging) from History: reviewed by the server, recorded as a new publication', async () => {
+    at('rollback: open History (staging)');
     await tab(A, 'history');
     await A.selectOption('[data-action=history-target]', 'staging');
     await A.waitForSelector('[data-action=history-rollback]', { timeout: 15000 });
     const before = Number(sql(`select count(*) from public.gear_catalog_publications where target = 'staging'`));
+    at('rollback: open dialog (server review of the rollback)');
     await A.click('[data-action=history-rollback] >> nth=-1'); // the oldest staging publication
     await A.waitForSelector('#dialog[open] [data-action=rollback-go]:not([disabled])', { timeout: 15000 });
     await shot(A, '06-rollback-dialog');
+    at('rollback: publish rollback and wait for the success toast');
     await A.click('#dialog [data-action=rollback-go]');
     await toastText(A, /Rollback recorded as revision/, 20000);
+    at('rollback: History shows the rollback chip');
     assert.equal(Number(sql(`select count(*) from public.gear_catalog_publications where target = 'staging'`)), before + 1);
     assert.ok(sql(`select rollback_of from public.gear_catalog_publications where target = 'staging' order by published_at desc limit 1`));
     await A.waitForSelector('#side .chip >> text=rollback');
+  });
+
+  await step('drift acknowledgement: a key-holder write blocks publishing, is acknowledged in the UI, then superseded', async () => {
+    at('drift: key-holder write');
+    const current = (await publicRead('staging')).data;
+    const foreign = { ...current, revision: `bypass-${Date.now()}`, publishedAt: Math.floor(Date.now() / 1000) + 30, brands: current.brands.slice(1) };
+    assert.equal((await serviceWrite('staging', JSON.stringify(foreign, null, 2) + '\n')).status, 200);
+    await A.reload(); await A.waitForSelector('#brand-list li');
+    await tab(A, 'publish');
+    at('drift: UI shows drift and blocks publishing');
+    assert.match(await A.textContent('section.target.staging'), /DRIFT/);
+    await runChecks(A, 'staging');
+    assert.equal(await A.isDisabled('[data-action=publish][data-target=staging]'), true, 'publish blocked while drift is unacknowledged');
+    await shot(A, '09-drift');
+    at('drift: acknowledge');
+    await A.click('[data-action=ack-drift][data-target=staging]');
+    await A.click('#dialog [data-action=ack-drift-go]');
+    await toastText(A, /Drift acknowledged/);
+    await A.waitForFunction(() => /drift acknowledged/.test(document.querySelector('section.target.staging')?.textContent ?? ''));
+    assert.equal(sql(`select count(*) from public.gear_audit_log where event = 'drift_acknowledged'`), '1');
+    at('drift: Changes compares with the acknowledged Storage document');
+    await tab(A, 'changes');
+    await A.selectOption('[data-action=changes-target]', 'staging');
+    assert.match(await sideText(A), /Baseline: the acknowledged Storage document/);
+    at('drift: publish supersedes it with a newer publishedAt');
+    await editField(A, 'tagline', 'Supersedes the acknowledged drift');
+    await runChecks(A, 'staging');
+    await A.click('[data-action=publish][data-target=staging]');
+    await toastText(A, /Local staging publication/, 20000);
+    const served = (await publicRead('staging')).data;
+    assert.equal(served.brands[0].tagline, 'Supersedes the acknowledged drift');
+    assert.ok(served.publishedAt > foreign.publishedAt, 'stamped after the acknowledged document');
+    assert.equal((await fn((await sessionOf(A)).access_token, { action: 'inspect', target: 'staging' })).data.state, 'in_sync');
   });
 
   await step('image upload: validated PNG stored content-addressed; HEIF refused', async () => {
@@ -262,14 +317,15 @@ try {
 
   await step('session refresh: a session close to expiry is refreshed without signing out', async () => {
     const before = await sessionOf(A);
-    await A.evaluate(() => { const s = JSON.parse(sessionStorage.getItem('gear-admin-local-session')); s.expires_at = Math.floor(Date.now() / 1000) + 30; sessionStorage.setItem('gear-admin-local-session', JSON.stringify(s)); });
+    await A.evaluate(() => { const s = JSON.parse(sessionStorage.getItem('gear-admin-local-session')); s.expires_at = Math.floor(Date.now() / 1000) + 3; sessionStorage.setItem('gear-admin-local-session', JSON.stringify(s)); });
     await A.reload(); await A.waitForSelector('#brand-list li', { timeout: 15000 });
     const after = await sessionOf(A);
     assert.notEqual(after.refresh_token, before.refresh_token, 'refresh token rotated');
-    assert.ok(after.expires_at > Math.floor(Date.now() / 1000) + 600);
+    assert.ok(after.expires_at > Math.floor(Date.now() / 1000) + lifetimeOf(after) / 2);
   });
 
   await step('session ended elsewhere (global sign-out): next server action returns to sign-in', async () => {
+    await Bp.reload(); await Bp.waitForSelector('#brand-list li'); // B was idle: let the adapter refresh first
     const { access_token: token } = await sessionOf(Bp);
     const res = await fetch(`${ENV.API_URL}/auth/v1/logout?scope=global`, { method: 'POST', headers: { apikey: ENV.PUBLISHABLE_KEY, Authorization: `Bearer ${token}` } });
     assert.equal(res.status, 204);
@@ -286,6 +342,82 @@ try {
     await A.waitForSelector('form[data-form=sign-in]');
     await A.reload();
     await A.waitForSelector('form[data-form=sign-in]');
+  });
+
+  // ---- real access-token expiry (needs a short local lifetime: GEAR_LOCAL_JWT_EXPIRY=60 tools/start-local.sh)
+  // Raw calls with one specific access token (not whatever the page holds now).
+  const rawCalls = (page, access_token) => page.evaluate(async ({ url, key, access_token }) => {
+    const h = { apikey: key, Authorization: `Bearer ${access_token}` };
+    const rest = await fetch(`${url}/rest/v1/gear_catalog_drafts?select=version`, { headers: h });
+    const fnr = await fetch(`${url}/functions/v1/gear-publish`, { method: 'POST', headers: { ...h, 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'inspect', target: 'staging' }) });
+    const st = await fetch(`${url}/storage/v1/object/authenticated/recommended-gear/staging/catalog-v1.json`, { headers: h });
+    return { rest: rest.status, restBody: (await rest.text()).slice(0, 120), fn: fnr.status, fnBody: (await fnr.text()).slice(0, 120), storage: st.status, storageBody: st.status === 200 ? '(object)' : (await st.text()).slice(0, 120) };
+  }, { url: ENV.API_URL, key: ENV.PUBLISHABLE_KEY, access_token });
+  const expOf = (token) => JSON.parse(Buffer.from(token.split('.')[1], 'base64url')).exp;
+  // The page polls every 10 s while visible, which would refresh the token. Report the page as hidden
+  // (its poll skips hidden pages) so the stored token really expires, then make it visible again.
+  const setHidden = (page, hidden) => page.evaluate((h) => Object.defineProperty(document, 'hidden', { configurable: true, get: () => h }), hidden);
+  // Idle past exp, then measure how long after exp each server still accepts the token (PostgREST
+  // may allow clock skew). Returns { restAcceptedUntil, fnAcceptedUntil } in seconds after exp.
+  const idleUntilExpired = async (page, token) => {
+    await setHidden(page, true);
+    while (Date.now() / 1000 < expOf(token) + 1) await sleep(250);
+    const seen = { restAcceptedUntil: null, fnAcceptedUntil: null, storageAcceptedUntil: null, firstRestRefusalAfterExp: null };
+    for (;;) {
+      const r = await rawCalls(page, token);
+      const after = Math.round(Date.now() / 1000 - expOf(token));
+      if (r.rest === 200) seen.restAcceptedUntil = after;
+      if (r.fn === 200) seen.fnAcceptedUntil = after;
+      if (r.storage === 200) seen.storageAcceptedUntil = after;
+      if (r.rest === 401) { seen.firstRestRefusalAfterExp = after; break; }
+      if (after > 120) break;
+      await sleep(1000);
+    }
+    await setHidden(page, false);
+    return seen;
+  };
+
+  await step('real expiry: an expired access token is refused by PostgREST and the function; the UI refreshes and continues', async () => {
+    await signIn(A, 'publisher', aTotp.secret);
+    await A.waitForSelector('#brand-list li', { timeout: 15000 });
+    const lifetime = lifetimeOf(await sessionOf(A));
+    if (lifetime > 120) throw new Error(`access tokens last ${lifetime} s; restart with GEAR_LOCAL_JWT_EXPIRY=60 tools/start-local.sh for this check`);
+    const before = await sessionOf(A);
+    at(`real expiry: idle (no polling) until the ${lifetime} s token expires`);
+    const window = await idleUntilExpired(A, before.access_token);
+    assert.equal((await sessionOf(A)).access_token, before.access_token, 'the page still holds the same, now expired, token');
+    const raw = await rawCalls(A, before.access_token);
+    console.log(`EVIDENCE expired-token ${JSON.stringify({ lifetime, exp: expOf(before.access_token), now: Math.floor(Date.now() / 1000), ...window, ...raw })}`);
+    assert.ok(window.firstRestRefusalAfterExp !== null, 'PostgREST eventually refuses the expired token');
+    assert.equal(raw.rest, 401, 'PostgREST refuses the expired JWT');
+    assert.equal(raw.fn, 401, 'gear-publish refuses the expired JWT');
+    at('real expiry: a UI action refreshes and succeeds');
+    await runChecks(A, 'staging');
+    const after = await sessionOf(A);
+    assert.notEqual(after.access_token, before.access_token);
+    assert.ok(JSON.parse(Buffer.from(after.access_token.split('.')[1], 'base64url')).exp > Date.now() / 1000);
+    assert.equal(await A.locator('form[data-form=sign-in]').count(), 0, 'still signed in');
+  });
+
+  await step('real expiry after revocation: the token keeps working at the database until it expires; then the UI returns to sign-in', async () => {
+    await A.reload(); await A.waitForSelector('#brand-list li');
+    const { access_token } = await sessionOf(A);
+    await setHidden(A, true); // no polling from here: the page keeps exactly this token
+    assert.equal((await fetch(`${ENV.API_URL}/auth/v1/logout?scope=global`, { method: 'POST', headers: { apikey: ENV.PUBLISHABLE_KEY, Authorization: `Bearer ${access_token}` } })).status, 204);
+    const revoked = await rawCalls(A, access_token);
+    console.log(`EVIDENCE revoked-not-expired ${JSON.stringify(revoked)}`);
+    assert.equal(revoked.rest, 200, 'PostgREST still accepts a revoked but unexpired JWT (revocation is function-only, D5)');
+    assert.equal(revoked.fn, 401, 'gear-publish checks the session with Auth and refuses');
+    at('revoked: idle until the token expires');
+    const window = await idleUntilExpired(A, access_token);
+    const expired = await rawCalls(A, access_token);
+    console.log(`EVIDENCE revoked-and-expired ${JSON.stringify({ ...window, ...expired })}`);
+    assert.equal(expired.rest, 401);
+    at('revoked: a UI action cannot refresh and returns to sign-in');
+    await tab(A, 'publish');
+    await A.click('[data-action=review][data-target=staging]');
+    await A.waitForSelector('form[data-form=sign-in]', { timeout: 15000 });
+    assert.match(await A.textContent('.error-block'), /session ended/i);
   });
 } finally {
   await browser.close();

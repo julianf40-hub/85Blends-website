@@ -6,7 +6,7 @@ import { USERS, LOCAL_TEST_PASSWORD } from '../tools/make-seed.mjs';
 
 export const DIR = new URL('..', import.meta.url).pathname;
 export const ENV = {};
-export const sh = (cmd) => execSync(cmd, { cwd: DIR, encoding: 'utf8', env: { ...process.env, SUPABASE_INTERNAL_IMAGE_REGISTRY: 'docker.io' } });
+export const sh = (cmd) => execSync(cmd, { cwd: DIR, encoding: 'utf8', env: { GEAR_LOCAL_JWT_EXPIRY: '3600', ...process.env, SUPABASE_INTERNAL_IMAGE_REGISTRY: 'docker.io' } }); // config.toml reads the token lifetime from env
 export const sql = (q) => execSync(`psql "${ENV.DB_URL}" -v ON_ERROR_STOP=1 -At`, { input: q, encoding: 'utf8' }).trim();
 export const sqlError = (q) => { try { sql(q); return null; } catch (e) { return String(e.stderr || e.message); } };
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
