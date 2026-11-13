@@ -126,27 +126,34 @@ Both create a new integration or credential, so neither happens until the produc
 - MFA on Julian's Supabase **dashboard/organization** account too, because the dashboard is a
   privileged bypass (§6).
 
-## 4. Backend authorization that does not trust the UI (proposed; not applied)
+## 4. Backend authorization that does not trust the UI (implemented locally; not applied anywhere hosted)
 
-1. **Gateway:** `verify_jwt = true` for every `gear-*` function.
-2. **Function:** `supabase.auth.getUser(jwt)` checks with Auth, so a revoked session or deleted user
-   fails. It then requires all of:
-   - `aal = 'aal2'`;
-   - for Production, an `amr` TOTP entry ≤ 15 min old;
-   - `sub` equal to the pinned `GEAR_PUBLISHER_USER_ID`;
-   - the `publisher` role in `gear_admins`, read from the DB.
+Implemented and tested in the local backend (`_admin-prototype/backend/` on branch
+`claude/admin-backend-local`):
 
-   Roles never come from `user_metadata`, which the user can edit.
-3. **Database:**
-   - `create unique index gear_admins_single_publisher on public.gear_admins (role) where role = 'publisher';`
-   - a `BEFORE INSERT` trigger on `gear_catalog_publications` that requires `published_by` to be
-     the current publisher and `auth_aal = 'aal2'`;
-   - the verified `aal`/`amr` stored on every row.
+1. **Gateway:** `verify_jwt = true` for `gear-publish`.
+2. **Function:** checks the session with Auth (`GET /auth/v1/user`, so revoked or signed-out
+   sessions fail), then requires all of:
+   - `aal2`;
+   - for Production, a TOTP `amr` entry within the step-up window;
+   - the `publisher` role in `gear_admins`;
+   - `sub` equal to the pinned `GEAR_PUBLISHER_USER_ID`.
 
-   **Limit:** Postgres cannot verify an MFA claim the function hands it. The MFA proof rests on Auth
-   plus the function; the database enforces identity and records the evidence.
-4. **RLS:** reads and draft saves go through `private.gear_role()`, which requires `aal2`. There are
-   no INSERT/UPDATE/DELETE policies on any `gear_*` table or on the bucket.
+   Roles never come from user-editable metadata.
+3. **Database:** row-level security on every table, a single-publisher unique index, a publication
+   guard trigger, append-only triggers, and Storage RLS on the catalog objects (§6).
+
+### MFA: what the database verifies itself vs evidence supplied by the function
+
+| Guarantee | Verified independently by the database? | How |
+|---|---|---|
+| Reading admin data and saving drafts requires `aal2` | **Yes** | PostgREST verifies the JWT signature; RLS and `save_gear_draft` read `aal` from `auth.jwt()` |
+| A catalog object in Storage can only be written by the publisher with `aal2` | **Yes** | The Storage API verifies the caller's JWT; the `storage.objects` RLS policy calls `private.gear_role()` at commit |
+| Production object writes need a TOTP verification within the step-up window | **Yes** | The same policy checks the `amr` TOTP timestamp against `gear_settings.production_step_up_seconds` |
+| The session has not been revoked or signed out | **No** (function only) | PostgREST and Storage check the signature and expiry, not session revocation. Only the function's Auth check sees a sign-out, so a revoked token stays valid at the database until it expires (keep JWT expiry short) |
+| The caller is the pinned publisher ID | **Partly** | The function checks the pinned ID. The database independently allows only one publisher row and checks that role |
+| The publication row's `auth_aal` / `auth_amr` | **No** (evidence) | Written by the function with the service role. The guard trigger checks the supplied `auth_aal = 'aal2'` but cannot verify it. The Storage write that publishes the bytes is the independently verified step |
+| The publication row's `published_by` is the publisher | **Partly** | The trigger checks that the supplied `published_by` holds the publisher role; the value itself comes from the function |
 
 ## 5. Credentials: actual permissions, not intended ones
 
@@ -178,12 +185,42 @@ signed catalogs (also an app change).
 
 ## 6. Publishing across the database and Storage
 
-Storage has no compare-and-swap. In order:
-1. **Reconcile under the lock:** read the authenticated origin, never the CDN.
-2. **Stamp:** `max(now, head + 1, floor)` with a ±300 s guard.
-3. **Record:** history with status `recorded`.
-4. **Upload while still holding the lock**, then read back. Status becomes `verified`,
-   `uncertain` or `conflict`.
+A database lock or fencing token alone does **not** stop a stale process from overwriting Storage.
+The local backend shows this with a negative control. When uploads used the service key (which
+bypasses Storage RLS):
+- a publisher paused past its lease overwrote the newer publication in Storage;
+- the database correctly refused its status update, but too late.
+
+The implemented design:
+
+1. **Lease with a fencing token** on the head row (`gear_acquire_lease`). A crashed process's lease
+   expires. Every database write (record, status, acknowledgement) must present the live token.
+2. **Capture the object version first** (`gear_prepare_write`), then read the authenticated
+   origin (never the CDN) and classify it.
+3. **Storage enforces fencing and compare-and-swap.** The function uploads with the **publisher's
+   own verified JWT**, not a service key, and puts the lease token in the object's user metadata.
+   `storage.objects` RLS, evaluated when Storage commits the object row, requires:
+   - publisher plus `aal2`;
+   - the live, unexpired lease token;
+   - for an update, the existing object version equal to the version captured in step 2;
+   - for Production, a recent TOTP.
+
+   A rejected upload leaves the served object unchanged.
+4. **Stamp** `max(now, head + 1, floor)` with a ±300 s guard. **Record** history with status
+   `recorded`. **Upload, read back**, and record `verified`, `uncertain` or `conflict`.
+5. **Reconcile** reads first and makes at most one re-send per call (no retry loop). It re-sends
+   only recorded bytes that never landed, and only through the same compare-and-swap, so content
+   that changed after it read is never overwritten automatically. If the object already holds the
+   bytes, reconcile records `verified` without writing.
+
+**Tested locally:**
+- a stale publisher paused after its commit is rejected by Storage, and B's object stays;
+- a stale publisher paused before recording gets `lease_lost`;
+- a bypass write during a reconcile pause is not overwritten;
+- a lost-response upload is reconciled with no new write.
+
+**Still not prevented:** service and secret keys bypass Storage RLS, so writers holding them
+remain detectable drift (below).
 
 Anything in Storage that the database didn't record is **drift**, and it blocks publishing.
 
@@ -336,7 +373,7 @@ and I created or moved no repository.
 | Contract parity with the Python validator | Done; 166 / 166 |
 | Review findings fixed and regression-tested (Codex at `f44de12`; manual review at `d473feb`) | Done; `tools/ui-regression.cjs` 6 / 6, `server.test.mjs` |
 | Operating model, MFA, publisher-only, drift and incident rules modeled | Done; `tests/server.test.mjs` |
-| Plan reviewed by Julian | **Open** |
+| Operating model and local-first direction | Accepted by Julian (2026-11-13) |
 
 ### B. Backend staging (no production data; nothing the apps read)
 
@@ -346,6 +383,11 @@ Edge Runtime locally. The repository has already replayed its migrations this wa
 `verify_enabled = true`; **both default to `false`**
 ([CLI config](https://supabase.com/docs/guides/local-development/cli/config)), so this goes in a
 local-only config.
+
+**Status:** the local backend exists on branch `claude/admin-backend-local`, with fictional data
+and 28 integration tests passing against a local stack (see its README). Not yet implemented
+locally: image uploads, the scheduled verifier, wiring the UI to the backend, and magic-link
+sign-in.
 
 **Checks that local covers:**
 - migration replay; RLS; the single-publisher index and publication trigger;
@@ -364,7 +406,10 @@ local-only config.
 - CDN and `Cache-Control` behavior on public URLs (Smart CDN is unverified);
 - whether hosted logs attribute a Storage write to a specific key (§5);
 - the default secrets actually injected into hosted functions;
-- the asymmetric JWT signing keys and new API keys as issued by the hosted platform;
+- the asymmetric JWT signing keys and new API keys as issued by the hosted platform. Locally, the
+  function receives the new-style key under a different variable name than the hosted docs list;
+- the same Storage RLS behavior on the hosted Storage API version: version-based compare-and-swap,
+  `x-metadata` in `user_metadata`, and `amr` in policies;
 - magic-link email delivery;
 - scheduled verifier execution (cron);
 - an iOS TestFlight build reading a staging object over the real network.
@@ -416,7 +461,21 @@ here needs Julian's go-ahead.
     catalog, its reader must implement the identical acceptance rules and pass the ported
     validator cases (§1).
 
-## 13. Verification in this session
+## 13. Unresolved decisions (specific; tracked separately from blockers)
+
+| # | Decision | Options / proposal | Needed by |
+|---|---|---|---|
+| D1 | Alert delivery for the verifier and incidents | Email, push, or another channel | Production launch |
+| D2 | Far-future incident recovery | Restore the previous bytes, a forward-stamped correction, or an app change capping accepted skew (default stays block and report) | Production launch |
+| D3 | Admin URL and deploy method | `<project>.pages.dev` with Access (no DNS change) vs a custom hostname (DNS change); Cloudflare Git integration vs a direct upload with a Pages-only token | Hosting the frontend |
+| D4 | Hosted non-production environment for tier B's hosted-only checks | Free-plan project vs a Pro branch | Backend staging, hosted part |
+| D5 | Production step-up window and JWT lifetime | Proposed 900 s step-up and a short access-token expiry (revocation is function-only, §4) | Production launch |
+| D6 | HEIF uploads | Stay disabled until a server-side decoder and dimension checks exist | Optional |
+| D7 | Future-timestamp warning in `validate_catalog.py` | Separate iOS tooling PR (`docs/proposals/validator-future-timestamp.md`) | Optional |
+| D8 | Signed catalogs (the only full prevention against key holders) | App change on iOS (and Android when enabled) | Optional, long term |
+| D9 | Retention of unreferenced images | e.g. report after 30 days, delete manually | Before image uploads ship |
+
+## 14. Verification in this session
 
 - `node --test _admin-prototype/tests/*.test.mjs`: **54 pass**.
 - `node _admin-prototype/tools/ui-regression.cjs`: 6 / 6.
