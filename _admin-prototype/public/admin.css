@@ -246,3 +246,17 @@ legend { font-weight: 700; padding: 0 6px; }
 .pv-more-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-direction: row-reverse; }
 .pv-more-head .pv-wordmark { text-align: left; }
 .pv-more-sub { margin: 4px 0 0; color: var(--p-muted); }
+
+.sim-tag { display: inline-block; font-size: 11px; font-weight: 800; letter-spacing: .08em; padding: 2px 8px; border-radius: 6px; background: #ffe7a3; color: #3a2a00; vertical-align: middle; }
+.account-select { display: grid; gap: 2px; }
+.account-label { font-size: 11px; color: #ffe7a3; font-weight: 700; letter-spacing: .04em; }
+.devtools-label { display: block; margin-top: 8px; color: #ffe7a3; font-weight: 700; }
+.error-text { color: var(--error); font-weight: 600; }
+.result.uncertain { background: var(--warn-wash); }
+.preview-limits ul { margin: 6px 0 0; padding-left: 18px; }
+.preview-limits li { margin: 3px 0; }
+.topbar-account { flex-wrap: wrap; min-width: 0; }
+@media (max-width: 560px) {
+  .topbar-account, .account-select { width: 100%; }
+  .topbar-account select { min-width: 0; width: 100%; }
+}

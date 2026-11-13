@@ -1,93 +1,103 @@
 # Recommended Gear Admin: plan for connecting it securely
 
 Status: **plan only.** Nothing here has been migrated, deployed, published or configured. The
-prototype in this folder is local, fictional and simulated. Every step below that touches Supabase,
-credentials or hosting needs Julian's go-ahead, and none should start until the active credential
-migration has landed (see §9).
+prototype in this folder is local, uses fictional data, and simulates sign-in, roles, MFA and publishing.
+Every step that touches Supabase, credentials, hosting or another repository needs Julian's
+go-ahead. None should start until the active credential migration has landed (§10).
 
-Inputs, read from `julianf40-hub/E85-Blends-App` `main` at `e6c42ed`:
+Inputs, read-only, from `julianf40-hub/E85-Blends-App` `main` at `e6c42ed`:
 `docs/remote-gear/{README,PUBLISHING_DASHBOARD,STAGING_SETUP}.md`, `catalog-v1.schema.json`,
-`catalog-v1.json`, `tools/remote-gear/{validate_catalog,publish_catalog,make_fixtures}.py` and
-tests, `EightyFiveBlends/GearCatalog.swift`, `RecommendedGearView.swift`, `MoreView.swift`, and
-`supabase/` (config, functions/_shared). The migration branches `fix/gear-publisher-secret-keys` and
-`feature/supabase-publishable-key-migration` were read but not touched.
-
-This plan follows `PUBLISHING_DASHBOARD.md` and adds what the prototype showed is needed:
-draft locking, separate staging and production heads, explicit confirmation, a live-revision
-check, and the credential model of the migration.
+`catalog-v1.json`, `tools/remote-gear/*` and tests, `EightyFiveBlends/GearCatalog.swift`,
+`RecommendedGearView.swift`, `MoreView.swift`, `supabase/config.toml` and `supabase/functions/_shared`.
+I also read `fix/gear-publisher-secret-keys` and `feature/supabase-publishable-key-migration` and
+did not change them. **The Android repository was not inspected.**
 
 ---
 
-## 1. Contract: unchanged
+## 0. Proposed initial operating model
 
-- The admin edits **data inside catalog v1**. It does not change the schema, add fields, or add
-  kinds. iOS and Android stay the only renderers. Layout, styling and fixed copy remain native.
-- `lib/validator.mjs` is a rule-for-rule port of `validate_catalog.py`. `tools/parity.mjs` runs
-  both over 166 documents (seed, staging fixtures, mutations of every rule, URL and Unicode edge
-  cases). Result: **0 mismatches**, and the vendored schema is byte-identical. Run it in CI on both
-  repositories whenever either validator changes. The Python validator stays the reference, and
-  Android ports the same cases.
-- The publisher writes `JSON.stringify(doc, null, 2) + "\n"`, the same layout as
-  `publish_catalog.encode`. Integers are emitted as integers, so the Python int-vs-float
-  distinction (`100.0`) cannot arise in bytes we produce.
-- Dashboard-only data lives **next to** the catalog, never inside it: `meta.approvals` and
-  `meta.notes` are never part of the published document. Nothing needs stripping.
-
-### What needs app changes (iOS **and** Android), not admin work
-
-| Request | Why the website can't do it |
+| Rule | Prototype behavior |
 |---|---|
-| New card layout or kind (video, product grid, comparison, banner) | v1 apps skip unknown kinds. Needs SwiftUI + Compose, then an optional v1 field or `catalog-v2.json` published **alongside** v1. |
-| A second sponsor, or a sponsor other than the RVP layout | One `rvp_wheels`, reserved id. Needs a new kind. |
-| Badge text, "Sponsored by …", empty state, "About Featured Brands", section titles | Fixed app copy. |
-| Colors, fonts, per-brand themes, eFlexFuel-style treatment for another brand | Styling is native and keyed by stable ID. |
-| Bundled artwork for a new brand or wheel ID | Assets in both apps. Until then use `imageURL` / `logo` / `heroImageURL`. |
-| Percent-off, non-USD, multiple offers, offers on the sponsor card | v1 offer is one whole-USD amount on a `brand`. |
-| More order different from Recommended Gear, More-only entries | More follows catalog order (sponsor banner, then Featured Brands). |
-| Sections, categories, search, targeting by region/vehicle/platform | Every device gets the same document. |
-| Rich text, Markdown, HTML, video, animated images | Plain text; PNG/JPEG/HEIF only. |
-| Ring with ≠ 9 wheels | Ring is designed for nine; other counts use the grid automatically. |
-| Deep links into the app, non-https links | https only; the app scheme is rejected. |
-| New click tracking in the apps | App work plus a privacy review. (Query parameters inside an https URL are just data.) |
+| Julian is the only publisher | One simulated publisher account. An optional "editor" account exists only to show that non-publishers can draft but not publish |
+| MFA required | Every write requires a simulated `aal2`. Untick "Simulated MFA" and writes are refused |
+| Publishers only for Staging | Staging **and** Production publishing, rollback, reconcile and drift acknowledgement require the publisher role |
+| Single-person Production approval | Production needs: server checks pass, every visible card's partner approval recorded, "I reviewed the before/after summary" ticked, and `PUBLISH PRODUCTION` typed. No second approver |
 
-The editor surfaces these instead of pretending: an unknown kind, an unknown key or a missing dark
-logo produces an "app change" or "info" note. A "nine" in the sponsor description with 8 visible
-wheels gets a warning, and adding a second sponsor is not offered.
+With a single publisher, review relies on the change summary and the Staging preview on an iOS
+TestFlight build. The Production panel warns when the exact draft version has not been on Staging.
+Adding a second person later only needs a role row and an approval step in `gear-publish`.
 
----
+## 1. Platform scope and the catalog contract (unchanged)
 
-## 2. Hosting
+- **iOS:** the remote catalog client is the 2.4.1 code on iOS `main`. Its own README says "not
+  built or tested in Xcode ... not release ready", and I did not verify App Store availability.
+  The admin's preview is a web approximation of those SwiftUI screens, written from source: it is
+  not a screenshot, a build, or a guarantee. It does not reproduce SF fonts and Dynamic Type
+  metrics, exact spacing, bundled artwork, eFlexFuel/RVP styling, VoiceOver, image limits and
+  fallbacks, carousel behavior, or the app's caching and ordering rules. The final check is an
+  iOS TestFlight build with Staging selected (iOS `STAGING_SETUP.md` §5).
+- **Android does not read this catalog.** The iOS docs list what an Android client *would* have
+  to implement. Nothing in the admin represents Android, and no Android layout is designed. The
+  UI says this in the preview, the publish panels and the capability list.
+- The admin edits **data inside catalog v1**: no schema change, no new fields or kinds.
+  `lib/validator.mjs` ports `validate_catalog.py` rule for rule. `tools/parity.mjs` runs both on
+  166 documents with **0 mismatches**, and the vendored schema is byte-identical. Dashboard-only
+  data (approvals, notes) is stored beside the catalog and never published.
 
-- **Not on GitHub Pages / 85blends.app.** Pages is public, and this repository deploys `main` to
-  it. The prototype folder starts with `_`, so Jekyll excludes it, but the real admin needs its
-  own origin and deploy pipeline.
-- Recommended: a static build of `public/` + `lib/` on a separate host at a separate origin
-  (e.g. `admin.85blends.app` on Cloudflare Pages/Netlify/Vercel), with `noindex`, the prototype's
-  strict CSP (allowing `connect-src` only to the Supabase project), HSTS and no third-party scripts.
-  Optional defense in depth: an identity-aware proxy (e.g. Cloudflare Access) restricted to the
-  admins' emails, in front of the page.
-- The page is not the security boundary. It holds nothing privileged. Every rule is enforced by
-  RLS and Edge Functions (§3–§6), so a leaked page or a modified browser gains nothing.
-- Where the UI code lives is a decision for Julian (§10). Backend pieces (migrations, functions,
-  shared validator copy) belong in `E85-Blends-App/supabase/`, next to the existing functions,
-  `_shared/` helpers and migration history.
+### Requires an iOS release (and Android work once Android supports the catalog)
 
-## 3. Authentication
+| Request | Why the admin can't do it |
+|---|---|
+| New card layout or kind | v1 apps skip unknown kinds; needs SwiftUI (and future Compose) work, then an optional v1 field or `catalog-v2.json` alongside v1 |
+| Second sponsor or a different sponsor layout | One `rvp_wheels`, reserved id |
+| Badges, "Sponsored by …", empty state, section titles | Fixed app copy |
+| Colors, fonts, per-brand themes, eFlexFuel-style treatment for others | Native styling keyed by stable ID |
+| Bundled artwork for a new ID | App assets; until then use remote images |
+| Percent-off, non-USD, several offers, sponsor offers | v1 offer is one whole-USD amount on a `brand` |
+| Separate More order or More-only entries | More follows catalog order |
+| Sections, search, targeting, per-platform content | Every device gets the same document |
+| Rich text, video, animation | Plain text; PNG/JPEG/HEIF |
+| Ring with other than nine wheels | Ring is designed for nine; others use the grid |
+| In-app deep links, non-https links | https only |
 
-- Supabase Auth on the existing project, **invite-only**. The apps don't use Supabase Auth, and
-  the checked-in `supabase/config.toml` already has `enable_signup = false`. Confirm the live
-  project matches before relying on it. Even so, authorization never relies on "is signed in":
-  only `gear_admins` membership counts.
-- Email magic link (or SSO) **plus mandatory TOTP MFA**. Every write requires `aal2` in the JWT,
-  checked in RLS **and** in each function.
-- Short sessions (1 h access token, refresh rotation, reauthentication for Production publish if
-  the session is older than ~15 min).
-- The browser sends the user JWT as `Authorization: Bearer` (no cookies), so classic CSRF does not
-  apply. Functions still check `Origin` against the admin origin, as the prototype does.
+## 2. GitHub Pages: verified exclusion, and why the real admin is hosted elsewhere
 
-## 4. Authorization (server-side only)
+**Evidence:**
 
-SQL below is a **draft for review**: not applied, not run anywhere.
+| Check | Result |
+|---|---|
+| How the live site is built | GitHub's built-in "pages build and deployment" from `main` (run 39396525694, 2026-10-20). Builder `ghcr.io/actions/jekyll-build-pages:v1.0.13` = github-pages gem **v232**, Jekyll **3.10.0**, `Configuration file: none`, `source: .` |
+| Repo conditions | No `.nojekyll`, no `_config.yml`, no `.github/workflows`. All three are checked on `main` and on the branch |
+| Control: local build of `main` with the same gem set | **Identical** to the 54-entry file list of the live artifact in that run's log |
+| Local build of this branch | **Identical** output to `main`; **0** `_admin-prototype` files |
+| Negative control: the same folder without the `_` | **37 files published**, including `server.mjs`, `IMPLEMENTATION_PLAN.html` and `index.html` (rendered from README) |
+
+`tools/verify-pages-exclusion.sh` repeats the whole check. Note what the live log also shows:
+every folder Jekyll keeps is deployed, including today's `tests/`, `scripts/` and `docs/`.
+
+**Limits of this evidence:**
+- Exclusion depends on Jekyll staying on. Adding `.nojekyll`, adding a `_config.yml` `include:` for
+  the folder, or switching to a custom Actions workflow that uploads the repository would publish
+  it. The script fails on all three.
+- After merge, confirm with `curl -sI https://85blends.app/_admin-prototype/README.md` (expect 404).
+  That isn't meaningful before merge.
+- This repository is **public**: the prototype source is readable on GitHub whether or not Pages
+  serves it. That is acceptable only because it holds no secrets and only fictional data.
+- Private Pages sites require GitHub Enterprise Cloud, so the real admin cannot be a private
+  Pages site of this repo (§9).
+
+## 3. Authentication (proposed)
+
+- Supabase Auth on the existing project, invite-only. The apps don't use Supabase Auth, and the
+  checked-in `supabase/config.toml` has `enable_signup = false` (confirm on the live project before
+  relying on it). Authorization never depends on being signed in, only on `gear_admins`.
+- Email magic link + **mandatory TOTP MFA**. TOTP is included on all Supabase plans; phone MFA is a
+  paid add-on and not needed. `aal2` is checked in RLS **and** in every function.
+- 1 h access tokens with refresh rotation. Re-authenticate before Production publishing if the
+  session is older than ~15 min.
+- The JWT goes in `Authorization: Bearer` (no cookies). Functions also check `Origin`.
+
+## 4. Authorization (proposed SQL, for review only: not applied anywhere)
 
 ```sql
 create table public.gear_admins (
@@ -101,213 +111,224 @@ create or replace function private.gear_role() returns text language sql stable 
   where a.user_id = auth.uid() and coalesce(auth.jwt() ->> 'aal', '') = 'aal2' $$;
 
 create table public.gear_catalog_drafts (
-  id text primary key default 'main',
-  catalog jsonb not null, meta jsonb not null default '{}',
+  id text primary key default 'main', catalog jsonb not null, meta jsonb not null default '{}',
   version integer not null default 1,
-  updated_by uuid not null references auth.users, updated_at timestamptz not null default now()
-);
+  updated_by uuid not null references auth.users, updated_at timestamptz not null default now());
+
+-- Monotonic stamping floor per target; may run ahead of Storage until an upload is verified (§6).
 create table public.gear_publication_head (
   target text primary key check (target in ('staging', 'production')),
-  revision uuid, published_at bigint, digest text
-);
+  revision uuid, published_at bigint, digest text);
+
+-- Append-only history: exact bytes, never updated.
 create table public.gear_catalog_publications (
   id uuid primary key default gen_random_uuid(),
   target text not null check (target in ('staging', 'production')),
   revision uuid not null unique, published_at bigint not null,
-  document text not null, digest text not null,       -- the exact bytes uploaded
-  summary text not null, draft_version integer, rollback_of uuid references public.gear_catalog_publications,
+  document text not null, digest text not null, summary text not null,
+  draft_version integer, rollback_of uuid references public.gear_catalog_publications,
   validator_version text not null, published_by uuid not null references auth.users,
-  storage_status text not null default 'recorded',    -- recorded | uploaded | verified | conflict | failed
-  created_at timestamptz not null default now(),
-  unique (target, published_at)
-);
+  created_at timestamptz not null default now(), unique (target, published_at));
+
+-- Storage outcome is a separate append-only log: recorded | verified | uncertain | conflict.
+create table public.gear_publication_status (
+  id bigserial primary key, publication_id uuid not null references public.gear_catalog_publications,
+  status text not null check (status in ('recorded', 'verified', 'uncertain', 'conflict')),
+  note text, at timestamptz not null default now());
+
+-- A publisher's acknowledgement of Storage contents that no publication recorded (§6).
+create table public.gear_storage_drift_acks (
+  id bigserial primary key, target text not null, digest text not null, foreign_revision text,
+  foreign_published_at bigint, acknowledged_by uuid not null references auth.users,
+  at timestamptz not null default now());
+
 create table public.gear_audit_log (id bigserial primary key, at timestamptz not null default now(),
   actor uuid, event text not null, detail jsonb not null default '{}');
 
-alter table public.gear_admins enable row level security;
-alter table public.gear_catalog_drafts enable row level security;
-alter table public.gear_publication_head enable row level security;
-alter table public.gear_catalog_publications enable row level security;
-alter table public.gear_audit_log enable row level security;
-
-create policy "admins read own row" on public.gear_admins for select to authenticated using (user_id = auth.uid());
-create policy "admins read draft" on public.gear_catalog_drafts for select to authenticated using (private.gear_role() is not null);
-create policy "admins read history" on public.gear_catalog_publications for select to authenticated using (private.gear_role() is not null);
-create policy "admins read heads" on public.gear_publication_head for select to authenticated using (private.gear_role() is not null);
--- No INSERT/UPDATE/DELETE policies for anon or authenticated on any gear table: drafts are written
--- through the save_gear_draft RPC below; publications, heads and audit rows only by gear-publish.
-revoke all on public.gear_admins, public.gear_catalog_drafts, public.gear_publication_head,
-  public.gear_catalog_publications, public.gear_audit_log from anon;
-
-create or replace function public.save_gear_draft(expected_version integer, new_catalog jsonb, new_meta jsonb)
-returns public.gear_catalog_drafts language plpgsql security definer set search_path = '' as $$
-declare result public.gear_catalog_drafts;
-begin
-  if private.gear_role() is null then raise exception 'forbidden' using errcode = '42501'; end if;
-  if octet_length(new_catalog::text) > 2000000 then raise exception 'too large'; end if;
-  update public.gear_catalog_drafts
-     set catalog = jsonb_build_object('schemaVersion', 1, 'brands', new_catalog -> 'brands'),
-         meta = new_meta, version = version + 1, updated_by = auth.uid(), updated_at = now()
-   where id = 'main' and version = expected_version
-  returning * into result;
-  if not found then raise exception 'draft_conflict' using errcode = '40001'; end if;  -- → HTTP 409
-  insert into public.gear_audit_log(actor, event, detail) values (auth.uid(), 'draft_save', jsonb_build_object('version', result.version));
-  return result;
-end $$;
-revoke all on function public.save_gear_draft from public, anon;
-grant execute on function public.save_gear_draft to authenticated;
+-- RLS on every table above; admins (aal2) may SELECT drafts, history, status, heads, acks.
+-- No INSERT/UPDATE/DELETE policies for anon or authenticated anywhere: drafts are saved via
+-- save_gear_draft(); everything else is written only by the gear-publish function.
 ```
 
-| Action | editor | publisher | Enforced by |
+`save_gear_draft(expected_version, catalog, meta)` (security definer; caller must have an
+aal2 role) does `UPDATE … WHERE id = 'main' AND version = expected_version`. Zero rows means 409
+with the current draft. Revision and `publishedAt` are never accepted from the browser.
+
+| Action | editor (optional, future) | publisher (Julian) | Enforced by |
 |---|---|---|---|
-| Read draft, history, heads | ✓ (aal2) | ✓ (aal2) | RLS |
-| Save draft | ✓ | ✓ | `save_gear_draft` (role + aal2 + version) |
-| Upload image | ✓ | ✓ | `gear-upload-url` |
-| Publish to **Staging** | ✓ | ✓ | `gear-publish` |
-| Publish / roll back **Production** | — | ✓ + typed confirmation (+ optional second publisher) | `gear-publish` |
-| Manage admins | — | owner via SQL / dashboard only | no API at all |
+| Read draft, history, status | ✓ aal2 | ✓ aal2 | RLS |
+| Save draft, upload images | ✓ | ✓ | RPC / `gear-upload-url` |
+| Publish Staging or Production, roll back, reconcile, acknowledge drift | — | ✓ (+ typed confirmation for Production) | `gear-publish` |
+| Manage admins | — | owner via SQL only | no API |
 
-Storage bucket `recommended-gear` stays as `STAGING_SETUP.md` describes: public read, **no**
-INSERT/UPDATE/DELETE policies for `anon` or `authenticated`.
+The `recommended-gear` bucket keeps public read and **no** write policies for `anon` or
+`authenticated` (as `STAGING_SETUP.md` documents).
 
-## 5. Credentials
+## 5. Credentials (proposed)
 
 | Where | Holds | Never holds |
 |---|---|---|
-| Browser (admin page) | Project URL + **publishable key** (`sb_publishable_…`, public by design, for Supabase Auth), the user's own session JWT | secret keys, service-role JWT, DB URL |
-| `gear-publish`, `gear-upload-url` Edge Functions | A **dedicated secret key** for the publisher (e.g. secret `GEAR_PUBLISHER_SECRET_KEY` = `sb_secret_…`), sent only as the `apikey` header for Storage writes (the convention on `fix/gear-publisher-secret-keys`); `SUPABASE_DB_URL` for the publish transaction | anything returned to the browser or logged |
-| Apps | Publishable key, public catalog URL (catalog reads send **no** key) | any write path |
-| Repositories / CI | nothing secret; secret scanning on | keys of any kind |
+| Admin page (browser) | Project URL, **publishable key** (public by design, for Auth), the user's own JWT | secret keys, service-role JWT, DB URL |
+| `gear-publish`, `gear-upload-url` | A **dedicated** publisher secret key (`sb_secret_…`, function secret), sent only as `apikey` (the convention on `fix/gear-publisher-secret-keys`); `SUPABASE_DB_URL` (already used by existing functions) | anything returned or logged |
+| Apps | publishable key; catalog reads send **no** key | any write path |
+| Repos / CI | nothing secret; secret scanning on | keys |
 
-- A dedicated secret key, rather than the project-wide legacy service-role JWT, can be revoked on
-  its own if exposed. **Do not create or rotate keys as part of this work.** Do it after the
-  credential migration lands, following the same procedure.
-- Functions redact the key from any error text, as `publish_catalog.py` does, and log no request
-  headers.
-- `tests/security.test.mjs` already fails on key-shaped strings, `supabase.co` references in
-  browser code, or any network client in the prototype server. Keep equivalent checks in the real
-  build.
+A dedicated key can be revoked on its own. **Creating or rotating keys is not part of this work.**
+It happens after the migration lands, by its procedure. `tests/security.test.mjs` already fails on
+key-shaped strings, Supabase hosts in browser code, or a network client in the prototype server.
 
-## 6. Edge Functions
+## 6. The publish lock across the database and Storage: review
 
-The prototype's `server.mjs` is the executable spec: each endpoint maps 1:1.
+### What a database lock does and does not give
 
-| Prototype | Real | Notes |
+Supabase Storage has no compare-and-swap. A row lock serializes **publishers that go through
+`gear-publish`**. It does not make the Storage write atomic with the database commit, does not
+stop writers that never take the lock, and does not tell us what Storage holds after an uncertain
+upload. The earlier proposal (commit history and head, release, then upload) has these failure
+modes:
+
+| # | Scenario | What goes wrong with "commit, then upload" |
 |---|---|---|
-| `PUT /api/draft` + `If-Match` | `rpc('save_gear_draft', {expected_version, …})` | 0 rows → 409 with the current draft |
-| `POST /api/review` | `gear-publish` with `dryRun: true` | Validation, images, approvals, diff; no writes |
-| `POST /api/publish` | `gear-publish` | Below |
-| `POST /api/rollback` | `gear-publish` with `{ rollbackOf }` | Same path, old document as input |
-| `POST /api/uploads/sign` + `PUT` | `gear-upload-url` → `createSignedUploadUrl(path, { upsert: false })`, then `gear-upload-finalize` | Finalize sniffs type, reads dimensions, deletes the object if invalid |
+| F1 | Function crashes after commit, before upload | Head says B, Storage still holds A. Nothing notices until someone looks |
+| F2 | Upload times out / connection drops | B may or may not be stored. Retrying "later" without the lock races the next publish |
+| F3 | Two publishes; A's upload is slow, B commits and uploads, then A's upload lands | Storage reverts to older A ("zombie" write). New devices get A; devices holding B reject A as stale (safe for them) |
+| F4 | Stale reads | Reading the **public** URL can return a CDN copy up to `max-age` old. Right after an overwrite, Storage's own origin can briefly serve the previous object (the reason for the read-back retries on `fix/gear-publisher-secret-keys`) |
+| F5 | Writers that bypass the lock: `publish_catalog.py --upload` (staging), a Supabase-dashboard upload, a future script | Storage holds bytes no publication recorded. Next stamp may not be newer than what devices accepted, or a withdrawal may be undone |
+| F6 | Lock released by a timeout while the holder is still uploading | Same as F3 |
 
-`gear-publish` (verify_jwt **on**; `Origin` check; role + aal2 from `gear_admins`):
+### Revised design (proposed; simulated in the prototype)
 
-1. Load the draft (or the rollback source). Refuse if `draftVersion` ≠ the current version: the
-   publisher must have reviewed exactly what is published.
-2. `BEGIN` on `SUPABASE_DB_URL`. `SELECT … FROM gear_publication_head WHERE target = $1 FOR UPDATE`
-   serializes publishes per target.
-3. Refuse if `expectedLiveRevision` ≠ head revision (someone else published since the review).
-   Refuse if head `published_at` > now + 300 s (clock guard, as `publish_catalog.py`).
-4. Production only: refuse unless every visible card's approval is `approved` and
-   `confirmation = 'PUBLISH PRODUCTION'`. Optionally require a second publisher's approval row.
-5. Stamp `revision = gen_random_uuid()` and `publishedAt = max(floor(now), head + 1)`. Encode the
-   bytes. Run `parseBytes` + `checkSuccessor` against the head bytes and every revision in history.
-6. Check images: every referenced URL must be on the gear storage host and exist (HEAD 200,
-   `image/*`). For Staging, other hosts are warnings. For Production they are errors.
-7. `INSERT` the publication (exact bytes, digest, summary, validator version), update the head,
-   write audit, `COMMIT`.
-8. Upload with `Content-Type: application/json`, `Cache-Control: max-age=60`, `x-upsert: true`.
-   Retries resend the **identical** bytes (devices treat a re-upload as "unchanged").
-9. Read back the authenticated origin with the retry/budget logic from
-   `fix/gear-publisher-secret-keys`, then the public URL. Record
-   `uploaded`/`verified`/`conflict`/`failed`. Return the same outcome classes as the CLI
-   (published, CDN lagging, conflict, unverified, unknown).
+1. **Reconcile first, under the lock.** `gear-publish` opens a transaction on `SUPABASE_DB_URL`
+   and locks the `gear_publication_head` row (`FOR UPDATE`, `lock_timeout` 5 s). It then reads the
+   **authenticated origin** (never the public CDN URL) and compares digests with the latest
+   recorded publication:
+   - match → `verified`;
+   - latest is `recorded`/`uncertain` and origin still holds the previous publication (or
+     nothing) → the upload never landed: **re-send the identical recorded bytes** (devices treat
+     identical bytes as "unchanged") and verify;
+   - anything else → **drift** (F3, F5, F6): publishing is blocked. Reconcile never overwrites
+     drift by itself; a person decides.
+2. **Drift acknowledgement.** The publisher reviews the foreign document. Acknowledging records
+   its digest, revision and `publishedAt`. The next publication must be stamped **newer than the
+   foreign `publishedAt`**, must not reuse its revision, and is successor-checked against it,
+   because devices may already hold it.
+3. **Stamp and record.** `publishedAt = max(now, head + 1, acknowledged foreign + 1)`, with the
+   ±300 s clock guard. Insert history (exact bytes) and status `recorded`, advance the head. The
+   head is the monotonic floor even if Storage lags, so a crash can't cause a timestamp reuse.
+4. **Upload while still holding the lock**, then read back the origin with the bounded retry from
+   the secret-keys branch. Record `verified`, `uncertain` (timeout or ambiguous) or `conflict`.
+   Commit, which releases the lock.
+5. **Bound the lock.** The upload uses an abort timeout (e.g. 20 s) **shorter** than the
+   transaction's `idle_in_transaction_session_timeout` (e.g. 60 s). A crashed function's connection
+   closes and Postgres releases the lock. The residual zombie window (F6: a write still in flight
+   after its connection died) is caught by step 1 of the next publish and by step 6.
+6. **Scheduled verifier.** Every 5 minutes, read each origin, compare it with the latest
+   recorded publication, and alert on `uncertain` older than 5 minutes or any drift. Read-only.
+7. **One writer path per target.** Retire `publish_catalog.py --upload` once `gear-publish`
+   handles Staging, or make it call the function. Keep the publisher secret key only in function
+   secrets. Treat dashboard uploads as an emergency procedure that is followed by an
+   acknowledgement. Detection (1, 6) is the backstop, because Storage can't refuse these writers.
 
-Reuse `lib/validator.mjs`, `lib/diff.mjs` and `lib/images.mjs` unchanged. They are
-dependency-free ES modules that run in Deno. Keep the parity test in CI.
+**Residual risk:** between a bypassing write (or zombie) and the next reconcile or verifier run (up
+to 5 minutes), new devices can receive the wrong document. Devices that already hold a newer
+publication reject an older one as stale, and every reconcile restores consistency. A
+device-side fix (e.g. a signed document) would be an app change and is out of scope.
 
-**One publisher path per target.** Once the dashboard can publish to Staging, retire
-`--upload` in `publish_catalog.py`, or have it call `gear-publish`. Otherwise the CLI bypasses the
-database lock, and two writers can overwrite each other, which is the limitation its own docstring
-describes.
+**Simulated in the prototype:** status log, reconcile, drift detection and acknowledgement,
+upload under the lock, and injectable faults (*Prototype tools*: crash after commit, upload
+timeout, lost response, CLI publish, older file re-uploaded). Covered by `tests/server.test.mjs`.
 
-## 7. Concurrent edits and history
+## 7. Drafts, history, images
 
-- **Drafts:** one shared draft with an integer `version` (optimistic lock). A conflicting save
-  gets 409 plus the current draft. The UI shows *their* changes and *yours*, with "Load theirs"
-  and "Save mine over theirs". Merging is deliberately not offered. Production can add Supabase
-  Realtime presence ("Alex is editing") so conflicts rarely happen. The prototype polls every 10 s.
-- **Publishing:** row lock per target, plus `expectedLiveRevision` and `draftVersion`
-  preconditions. The prototype's tests show that two simultaneous publishes give one success and
-  one 409, and that same-second publishes get t and t + 1.
-- **Staging and Production are independent:** separate heads, histories, objects and ordering.
-  The Production panel shows whether this exact draft version is live on Staging, and warns if not.
-- **History:** append-only (no UPDATE/DELETE policy). Each row holds the exact bytes and digest,
-  author, time, summary, the draft version it came from, and `rollback_of`. Rollback = a new
-  publication of old content: new revision, newer `publishedAt`, approvals re-checked. Retain
-  indefinitely (documents are small).
-- **Images:** content-addressed (`images/<brand>/<sha256>.<ext>`), never overwritten. Unreferenced
-  uploads are kept until a periodic report lists ones older than 30 days and unreferenced by any
-  publication. Deletion stays manual.
+- **Drafts:** an integer version lock. On conflict the UI shows "their changes" and "your
+  changes", with "load theirs" or "save mine over theirs". There is no merge. With one publisher,
+  conflicts come from two tabs or devices. Polling every 10 s, or Supabase Realtime later.
+- **History:** append-only exact bytes, plus a separate append-only status log. Rollback is a
+  new publication of old content (new revision, newer `publishedAt`, approvals re-checked).
+- **Images:** content-addressed `images/<brand>/<sha256>.<ext>`, created with `upsert: false`, never
+  overwritten. A finalize step sniffs the type and reads dimensions. HEIF needs a real decoder
+  server-side, or should be disallowed until one exists.
 
-## 8. Findings from this inspection
+## 8. The future-dated seed: verified against the publisher
 
-1. **The iOS seed's `publishedAt` is in the future.** `docs/remote-gear/catalog-v1.json` has
-   `publishedAt: 1794960000` = 2026-11-18T00:00Z (today is 2026-11-13). If that file is uploaded
-   unchanged as the first Production publication, `publish_catalog.py` (and `gear-publish`)
-   refuse every later publish until about Nov 18 ("live is more than 5 minutes in the future").
-   Devices that accepted it also reject anything stamped earlier. **Restamp it when publishing**
-   (the publisher does this; a manual upload doesn't). The prototype's own seed uses a past time.
-2. The dashboard proposal says "public sign-ups disabled", but that is a project-wide Auth setting.
-   It is safe today because the apps don't use Supabase Auth. If the apps adopt Supabase Auth later,
-   the `gear_admins` check (not sign-up settings) must remain the boundary, which this design
-   already assumes.
-3. Concurrent staging publishing via the CLI is unprotected (documented in the tool). See §6, "one
-   publisher path".
-4. HEIC/HEIF pixel dimensions can't be read without a decoder in the browser or the prototype. The
-   finalize function needs a real decoder, or HEIF should be disallowed in the admin until it has one.
-5. Smart CDN behavior for this plan is still unverified (open item in the iOS docs). Until it is,
-   expect about 2 minutes from publish to device.
+`docs/remote-gear/catalog-v1.json` has `publishedAt: 1794960000` (2026-11-18T00:00Z), about 4.6
+days after 2026-11-13. I ran `publish_catalog.prepare()` from `main` **and**
+`fix/gear-publisher-secret-keys` offline, with simulated responses and no network calls:
 
-## 9. Isolation from the credential migration
+| Path | Result |
+|---|---|
+| **Supported publisher**, seed as template, nothing live | `stamp()` **ignores** the template's `publishedAt` and stamps `max(now, live + 1)` = now. **No problem.** |
+| **Raw upload** of the unchanged seed (e.g. Supabase dashboard, iOS README §4 manual workflow) | Allowed: `validate_catalog.py` has no future-time check, so it prints OK |
+| …then the supported publisher | Refuses: "live publishedAt … is more than 300 s in the future" |
+| …then a manual upload stamped "now" | Validator and devices reject it: "publishedAt is older than the live publication" |
 
-- This work touched **only** `_admin-prototype/` in the website repository, on
-  `claude/85blends-admin-gear-prototype-9v827z`. No Supabase project, bucket, key, Auth setting,
-  migration, function or catalog was read with credentials or changed. The iOS repository was only
-  cloned read-only.
-- Sequence: (a) the migration PRs merge and keys are rotated per their own plan → (b) review the §4
-  SQL as a migration in `E85-Blends-App/supabase/migrations/` → (c) apply it to a **Supabase branch
-  or staging project** only → (d) create the dedicated publisher secret key there.
+The risk is therefore limited to **raw uploads**. The supported publisher is safe, but it is
+**staging-only**. Production has no supported publisher today, so its first publication would
+follow the manual iOS README §4 workflow, which tells the operator to set `publishedAt` by hand.
+Mitigations: never upload the seed file as-is; publish through the (future) `gear-publish`; and
+optionally add a future-time warning to `validate_catalog.py` (a small change in the iOS repo,
+not made here).
 
-## 10. Rollout (each step needs Julian's go-ahead)
+## 9. Hosting options and costs (proposed; nothing set up)
+
+The admin is a static page. Security comes from Supabase Auth, RLS and the functions, so the host
+only needs HTTPS, custom headers (CSP) and ideally an access gate in front of the page.
+
+| Option | Access gate in front of the page | Cost for one admin | Notes |
+|---|---|---|---|
+| **A. Cloudflare Pages + Cloudflare Access** (recommended) | Yes: email/OTP or SSO before the page loads | **$0** (Pages Free: 500 builds/mo; Zero Trust Free up to 50 users; $7/user/mo beyond) | Gating a custom domain normally requires that domain's DNS to be on Cloudflare; otherwise gate the `*.pages.dev` URL. Check where 85blends.app DNS lives |
+| B. Netlify | Basic site password on **Pro ($20/mo)**; not on Free/Personal; team login is Enterprise | $0 without gate, $20/mo with password | Fine as a plain static host |
+| C. Vercel | Password Protection is a Pro add-on (**$20/project/mo** on top of Pro **$20/seat/mo**) | $40/mo with gate | Hobby is limited to personal/non-commercial use, so not suitable |
+| D. GitHub Pages (this or a new repo) | Private Pages only on GitHub Enterprise Cloud | — | Not suitable: public |
+| E. Local only (`node server.mjs` on Julian's Mac) for real use | n/a | $0 | Workable for one person, but needs a real backend anyway; no gain over A |
+
+Supabase (existing project; current plan not checked, by design):
+- Edge Function invocations: 500k on Free, 2M on Pro ($25/mo). Admin usage is negligible.
+- TOTP MFA is included on all plans.
+- Branching is Pro/Team only, at **$0.01344 per branch-hour** (about $2.26 for a week-long test branch).
+- Catalog and image egress is small. Pro includes 250 GB; Free includes 5 GB cached egress.
+
+**Recommendation: option A** (expected incremental cost about $0/month), with Supabase Auth + MFA
+as the real boundary and Access as defense in depth. Plus short-lived branch hours during
+testing, if the project is on Pro. Prices are from the vendors' pricing pages, read 2026-11-13.
+Re-check them before committing.
+
+## 10. Isolation and sequencing
+
+- This work touched only `_admin-prototype/` in the website repository, on
+  `claude/85blends-admin-gear-prototype-9v827z`. I did not connect to, read or change any Supabase
+  project, bucket, key, Auth setting, function or catalog. The iOS repository was cloned read-only.
+- Sequence: the migration PRs merge and keys follow their plan → review the §4 SQL as a migration
+  in `E85-Blends-App/supabase/migrations/` → apply it to a **Supabase branch** only → create the
+  dedicated publisher key there → only then consider the live project.
+
+## 11. Rollout (each step needs Julian's go-ahead)
 
 | Phase | Work | Exit gate |
 |---|---|---|
-| 0 (this) | Local prototype, fictional data, simulated publishing | Review UI and plan |
-| 1 | Migration + RLS for review; `save_gear_draft`; tests with `supabase test db` | Replays clean on an empty DB; advisors clean; anon/authenticated non-admin writes fail |
-| 2 | `gear-publish`, `gear-upload-url`/`finalize` on a **Supabase branch**; Deno tests incl. validator parity and the server tests ported | Concurrent publish test, rollback, clock guard, image checks pass on the branch |
-| 3 | Host admin privately; connect to the branch; then Staging only on the live project | Staging publication shows on a TestFlight build (STAGING_SETUP §5 checklist) |
-| 4 | Enable Production publishing (first publication = restamped seed; §8.1) | Rollback rehearsed on Staging; two publishers named; MFA enforced |
-| 5 | Android client implements the same contract | Android ports validator cases; bundled-ID mapping created |
+| 0 (this PR) | Simulated prototype + plan | Review |
+| 1 | Choose hosting (§9) and where the UI code lives | Decision recorded |
+| 2 | Migration + RLS + `save_gear_draft` on a Supabase branch | Clean replay; non-admin writes fail |
+| 3 | `gear-publish` (§6), `gear-upload-url`/finalize, verifier, on the branch | Fault tests (§6) pass against real Storage on the branch |
+| 4 | Private hosting against the branch, then Staging on the live project; retire CLI `--upload` | Staging shows on an iOS TestFlight build |
+| 5 | Production (first publication through `gear-publish`, never a raw seed upload; §8) | Rollback and drift rehearsed on Staging |
+| — | Android | Separate project: implement the client per the iOS docs first |
 
-## 11. Decisions for Julian
+## 12. Decisions for Julian
 
-1. Where the admin UI lives: a new private repo (recommended, to keep it out of the public site's
-   repo and Pages), or this repository with a separate deploy.
-2. Hosting provider and domain for the admin; whether to add an identity-aware proxy.
-3. First editors/publishers, and whether Production needs two-person approval.
-4. Whether editors may publish to Staging (the prototype allows it; the proposal implied publishers only).
-5. Whether to allow HEIF uploads before server-side dimension checks exist (§8.4).
-6. Retention for unreferenced images.
+1. Hosting: option A (recommended) or another; where 85blends.app DNS is managed.
+2. Where the admin UI code lives long-term (a private repo is recommended; this PR is review-only).
+3. Confirm the operating model in §0, including no second approver for Production.
+4. HEIF uploads before a server-side decoder exists: allow or not.
+5. Whether to add a future-time warning to `validate_catalog.py` (iOS repo).
 
-## 12. Verification run in this session
+## 13. Verification in this session
 
-- `node --test _admin-prototype/tests/*.test.mjs`: validator cases ported from Python, model,
-  server rules (auth, MFA, Origin, If-Match, roles, approval gate, stale review, invalid content,
-  serialized publish, rollback, append-only history, clock guard, uploads, security headers, path
-  containment) and static security checks.
+- `node --test _admin-prototype/tests/*.test.mjs`: validator (ported), model, server rules
+  (simulated auth/MFA/Origin, If-Match, publisher-only publishing, approval gate, stale reviews,
+  serialized publishing, rollback, clock guard, uploads, headers) and the §6 failure modes.
 - `node _admin-prototype/tools/parity.mjs <E85-Blends-App>`: 166 documents, 0 mismatches.
-- Headless Chromium walkthrough: edit with inline errors, changes summary, conflict dialog,
-  staging publish, production gate, approval, production publish, rollback, sponsor ring in dark
-  mode, MFA-off refusal, and a 390 px layout with no horizontal scroll.
-- Not run: anything against Supabase, Deno, a real CDN, or the apps.
+- `_admin-prototype/tools/verify-pages-exclusion.sh`: PASS (54 entries, identical to `main`).
+- Site checks unchanged: `node --test tests/fuel-math.test.cjs`, `python3 tests/check-site.py`.
+- A headless Chromium walkthrough produced the screenshots in `docs/screenshots/`.
+- **Not run:** anything against Supabase, Deno, a CDN, a real Storage bucket or the apps.

@@ -139,20 +139,21 @@ async function poll() {
 function renderAccount() {
   const accounts = S.session.accounts.map((a) => `<option value="${e(a.email)}" ${a.email === S.user ? 'selected' : ''}>${e(a.name)} · ${e(a.role)}</option>`).join('');
   $('#account').innerHTML = `
-    <label class="account-select"><span class="sr-only">Simulated account</span>
-      <select data-action="switch-user" aria-describedby="account-note"><option value="">Signed out</option>${accounts}</select></label>
-    <label class="mfa"><input type="checkbox" data-action="toggle-mfa" ${S.aal === 'aal2' ? 'checked' : ''}> MFA verified</label>
-    <span id="account-note" class="sr-only">Simulated sign-in. A real deployment uses Supabase Auth with mandatory TOTP MFA.</span>`;
+    <span class="sim-tag" title="No real sign-in, roles or MFA exist in this prototype">SIMULATED</span>
+    <label class="account-select"><span class="account-label">Simulated account</span>
+      <select data-action="switch-user" aria-describedby="account-note"><option value="">Simulated sign-out</option>${accounts}</select></label>
+    <label class="mfa"><input type="checkbox" data-action="toggle-mfa" ${S.aal === 'aal2' ? 'checked' : ''}> Simulated MFA (aal2)</label>
+    <span id="account-note" class="sr-only">Simulated sign-in, role and MFA. Nothing is verified. A real deployment would use Supabase Auth with mandatory TOTP MFA and server-side roles.</span>`;
 }
 
 function renderSignedOut(message) {
   $('#draft-status').textContent = '';
   $('#workspace').innerHTML = `<section class="signin">
-    <h1>Recommended Gear Admin</h1>
+    <h1>Recommended Gear Admin <span class="sim-tag">SIMULATED SIGN-IN</span></h1>
     ${message ? `<p class="error-block">${e(message)}</p>` : ''}
-    <p>Choose a <strong>fictional</strong> account to simulate sign-in. Each browser tab keeps its own account, so two tabs can act as two people.</p>
+    <p><strong>There is no real sign-in here.</strong> Choose a fictional account to <em>simulate</em> one. The role and the MFA level are also simulated: they are sent as plain headers to the local server, which a real deployment must never trust. Each browser tab keeps its own simulated account.</p>
     <ul class="plain">${S.session.accounts.map((a) => `<li><button type="button" data-action="sign-in" data-email="${e(a.email)}">${e(a.name)}</button> <span class="muted">${e(a.email)} · ${e(a.role)}</span></li>`).join('')}</ul>
-    <p class="muted">In the real admin this is Supabase Auth (invite-only, magic link or SSO, plus TOTP MFA). Roles come from the server-side <code>gear_admins</code> table, never from the browser.</p>
+    <p class="muted">Proposed operating model: Julian is the only publisher, MFA is required, only the publisher can publish (Staging and Production), and Production needs one person's reviewed summary plus a typed confirmation. In a real admin this would be Supabase Auth (invite-only, TOTP MFA) with roles from a server-side <code>gear_admins</code> table.</p>
   </section>`;
 }
 
@@ -164,7 +165,14 @@ function renderStatus() {
     <button type="button" class="primary" data-action="save" ${dirty ? '' : 'disabled'} title="Save draft (Ctrl/⌘ S)">Save draft</button>
     <button type="button" data-action="discard" ${dirty ? '' : 'disabled'}>Discard</button>
     <details class="devtools"><summary>Prototype tools</summary>
-      <button type="button" data-action="dev-other-edit">Simulate another admin saving the draft</button>
+      <button type="button" data-action="dev-other-edit">Simulate a draft save from another tab or device</button>
+      <span class="devtools-label">Next Staging publish:</span>
+      <button type="button" data-action="dev-fault" data-target="staging" data-fault="crash_after_commit">crash after DB commit</button>
+      <button type="button" data-action="dev-fault" data-target="staging" data-fault="response_lost">upload response lost (stored)</button>
+      <button type="button" data-action="dev-fault" data-target="staging" data-fault="upload_timeout">upload timeout (not stored)</button>
+      <span class="devtools-label">Writers that bypass the lock (Staging):</span>
+      <button type="button" data-action="dev-external" data-target="staging" data-kind="cli">CLI publish (publish_catalog.py --upload)</button>
+      <button type="button" data-action="dev-external" data-target="staging" data-kind="older">older file re-uploaded / late upload</button>
       <button type="button" data-action="dev-reset">Reset all prototype data</button>
     </details>`;
 }
@@ -446,7 +454,13 @@ function sidePreview() {
     </div>
     ${source ? html : '<p class="muted">Nothing published here yet. Apps show the empty staging state (Staging) or bundled content (Production, before the first publication).</p>'}
     ${notes.map((n) => `<p class="info">${e(n)}</p>`).join('')}
-    <p class="muted small">Approximation for reviewing content, order and placement. Native layout, fonts, bundled artwork and styling are app-defined (grey dashed boxes). Remote images load only from gear storage. Check the final result on a TestFlight build pointed at Staging.</p>`;
+    <div class="info warn small preview-limits"><strong>Preview limits.</strong>
+      <ul>
+        <li>A web approximation of the <strong>iOS</strong> screens, written from the SwiftUI source (2.4.1 code on the iOS main branch). It is not a screenshot or a build of the app.</li>
+        <li>Not reproduced: SF fonts and Dynamic Type metrics, exact spacing, bundled artwork (grey dashed boxes), eFlexFuel/RVP styling, VoiceOver, image download limits and fallback timing, carousel behaviour, and the app's offline/cache and ordering rules.</li>
+        <li><strong>Android does not read this catalog yet.</strong> Nothing here represents Android; its future layout would be native Compose and is not designed.</li>
+        <li>Remote images load only from the simulated gear storage. Final check: an iOS TestFlight build with Staging selected.</li>
+      </ul></div>`;
 }
 
 const show = (v) => (v === undefined ? '<span class="muted">—</span>' : typeof v === 'number' && v > 1_000_000_000 ? e(formatTime(v)) : e(typeof v === 'string' ? v : JSON.stringify(v)));
@@ -498,7 +512,7 @@ function sideChecks() {
     <details class="capabilities"><summary>What this admin can and cannot change</summary>
       <h4>Without an app release (data in the v1 contract)</h4>
       <ul>${EDITABLE_WITHOUT_RELEASE.map((x) => `<li>${e(x)}</li>`).join('')}</ul>
-      <h4>Needs iOS <em>and</em> Android changes</h4>
+      <h4>Needs an iOS release (and, once Android supports the remote catalog, Android work too)</h4>
       <dl>${REQUIRES_APP_RELEASE.map((x) => `<dt>${e(x.area)}</dt><dd>${e(x.detail)}</dd>`).join('')}</dl>
     </details>`;
 }
@@ -512,27 +526,29 @@ function targetPanel(target) {
   const stagedVersion = S.server.publishedDraftVersions?.staging;
   const isPublisher = role() === 'publisher';
   const mfa = S.aal === 'aal2';
+  const storage = S.server.storage?.[target] ?? { state: 'empty' };
+  const storageOK = ['in_sync', 'empty', 'repaired'].includes(storage.state) || (storage.state === 'drift' && storage.acknowledged);
   const requirements = [
     [!dirty, 'Draft saved (publishing uses the saved version)'],
     [!!review && review.draftVersion === S.base.version, 'Server checks run for this draft version'],
     [!!review && review.errors.length === 0, 'Server validation, image and approval checks pass'],
-    [mfa, 'MFA verified (aal2)'],
+    [mfa, 'Simulated MFA (aal2)'],
+    [isPublisher, 'Simulated publisher role (the only role that may publish)'],
+    [storageOK || storage.state === 'pending', 'Storage matches the latest recorded publication (re-checked under the lock)'],
   ];
   if (production) {
-    requirements.push([isPublisher, 'Publisher role']);
-    requirements.push([S.acknowledged, 'I reviewed the before/after summary']);
+    requirements.push([S.acknowledged, 'I reviewed the before/after summary (single-person approval)']);
     requirements.push([S.confirmText === S.session.productionConfirmation, `Typed ${S.session.productionConfirmation}`]);
-  } else {
-    requirements.push([['editor', 'publisher'].includes(role()), 'Editor or publisher role']);
   }
   const ready = requirements.every(([ok]) => ok);
   return `<section class="target ${target}" aria-labelledby="t-${target}">
     <h3 id="t-${target}">${production ? 'Production' : 'Staging'} <span class="target-path">recommended-gear/${production ? '' : 'staging/'}catalog-v1.json</span></h3>
-    <p class="small">${production ? '<strong>Every App Store user</strong> on iOS (and Android later) within about 2 minutes. Withdrawing content needs another publication; deleting the file does not clear devices.'
-      : 'Only TestFlight, Xcode and Debug installs with <strong>Staging</strong> selected. Never shown on App Store installs. Approval gate skipped.'}</p>
+    <p class="small">${production ? 'Read by <strong>iOS builds that include remote Recommended Gear</strong> (the 2.4.1 code on the iOS main branch; App Store availability not verified here), within about 2 minutes. <strong>Android does not read this catalog yet.</strong> Withdrawing content needs another publication; deleting the file does not clear devices.'
+      : 'Read only by iOS TestFlight, Xcode and Debug installs with <strong>Staging</strong> selected. Never by App Store installs. Not read by Android. Partner-approval gate skipped.'}</p>
     <dl class="kv">
       <dt>Live revision</dt><dd>${live.head ? `<code>${e(live.head.revision)}</code>` : 'nothing published'}</dd>
       <dt>Published</dt><dd>${live.head ? e(formatTime(live.head.publishedAt)) : '—'}</dd>
+      <dt>Storage (simulated)</dt><dd>${storageMarkup(target, storage)}</dd>
       ${production ? `<dt>Previewed on Staging</dt><dd>${stagedVersion === S.base.version ? '✓ this draft version is live on Staging' : '<span class="warn-text">Not yet: publish this version to Staging and check it on a TestFlight build first</span>'}</dd>` : ''}
     </dl>
     <button type="button" data-action="review" data-target="${target}" ${dirty ? 'disabled' : ''}>Run server checks</button>
@@ -548,16 +564,30 @@ function targetPanel(target) {
     <ul class="requirements">${requirements.map(([ok, label]) => `<li class="${ok ? 'ok' : 'todo'}">${ok ? '✓' : '○'} ${e(label)}</li>`).join('')}</ul>
     <button type="button" class="${production ? 'danger' : 'primary'}" data-action="publish" data-target="${target}" ${ready ? '' : 'disabled'}>
       Simulate publish to ${production ? 'Production' : 'Staging'}</button>
-    ${result ? `<div class="result" role="status"><strong>Simulated publication recorded.</strong>
+    ${result ? `<div class="result ${result.storage === 'verified' ? '' : 'uncertain'}" role="status"><strong>Simulated publication recorded${result.storage === 'verified' ? ' and verified' : ', upload NOT confirmed'}.</strong>
       <dl class="kv"><dt>Revision</dt><dd><code>${e(result.revision)}</code></dd><dt>publishedAt</dt><dd>${e(result.publishedAt)} (${e(formatTime(result.publishedAt))})</dd>
-      <dt>SHA-256</dt><dd><code>${e(result.digest.slice(0, 16))}…</code> · ${e(result.bytes)} bytes</dd><dt>Read-back</dt><dd>${e(result.readBack)}</dd>
+      <dt>SHA-256</dt><dd><code>${e(result.digest.slice(0, 16))}…</code> · ${e(result.bytes)} bytes</dd><dt>Storage</dt><dd>${e(result.storage)}</dd><dt>Read-back</dt><dd>${e(result.readBack)}</dd>
       <dt>Object</dt><dd>${e(result.objectPath)}</dd></dl></div>` : ''}
   </section>`;
 }
 
+function storageMarkup(target, storage) {
+  const label = {
+    in_sync: '✓ origin holds the latest recorded publication', empty: 'nothing published yet', repaired: '✓ repaired by reconcile',
+    pending: '⚠ latest recorded publication not confirmed in Storage (crash or uncertain upload)',
+    drift: storage.acknowledged ? '⚠ drift acknowledged: the next publication will supersede it' : `✗ DRIFT: ${storage.reason}`,
+  }[storage.state] ?? storage.state;
+  const actions = [];
+  if (storage.state === 'pending') actions.push(`<button type="button" data-action="reconcile" data-target="${target}">Reconcile now</button>`);
+  if (storage.state === 'drift' && !storage.acknowledged) {
+    actions.push(`<button type="button" data-action="ack-drift" data-target="${target}" data-digest="${e(storage.originDigest)}">Acknowledge drift…</button>`);
+  }
+  return `<span class="${storage.state === 'drift' && !storage.acknowledged ? 'error-text' : storage.state === 'pending' ? 'warn-text' : ''}">${e(label)}</span> ${actions.join(' ')}`;
+}
+
 function sidePublish() {
   return `
-    <p class="info"><strong>Simulated.</strong> Publishing runs the full server-side flow (lock, stamp, validate, history, upload, read-back) but writes only to <code>_admin-prototype/.local-state/</code>. Nothing reaches Supabase, a CDN or any device.</p>
+    <p class="info"><strong>Simulated.</strong> Publishing runs the proposed server-side flow (reconcile Storage, lock, stamp, validate, record, upload, origin read-back) but writes only to <code>_admin-prototype/.local-state/</code>. Nothing reaches Supabase, a CDN or any device. Sign-in, roles and MFA are simulated. Use <em>Prototype tools</em> to inject crashes, uncertain uploads and writers that bypass the lock.</p>
     ${isDirty() ? '<p class="info warn">You have unsaved edits. Save the draft first: only the saved version can be checked and published.</p>' : ''}
     <div class="targets">${targetPanel('staging')}${targetPanel('production')}</div>`;
 }
@@ -570,14 +600,15 @@ function sideHistory() {
     <div class="preview-controls"><label>Target <select data-action="history-target">
       <option value="production" ${t === 'production' ? 'selected' : ''}>Production</option>
       <option value="staging" ${t === 'staging' ? 'selected' : ''}>Staging</option></select></label>
-      <span class="muted small">Append-only. A rollback is a <strong>new</strong> publication of old content, with a new revision and a newer publishedAt.</span></div>
+      <span class="muted small">Append-only (simulated). A rollback is a <strong>new</strong> publication of old content, with a new revision and a newer publishedAt. Storage status is tracked separately: recorded → verified, or uncertain until reconciled.</span></div>
     ${items.length ? `<ol class="history">${items.map((h) => `<li class="${h.revision === head?.revision ? 'live' : ''}">
-      <div><strong>${e(formatTime(h.publishedAt))}</strong> ${h.revision === head?.revision ? '<span class="chip ok">live</span>' : ''} ${h.rollbackOf ? '<span class="chip">rollback</span>' : ''}</div>
+      <div><strong>${e(formatTime(h.publishedAt))}</strong> ${h.revision === head?.revision ? '<span class="chip ok">latest recorded</span>' : ''} ${h.rollbackOf ? '<span class="chip">rollback</span>' : ''}
+        <span class="chip ${h.storageStatus === 'verified' ? '' : 'warn'}">storage: ${e(h.storageStatus)}</span></div>
       <div class="small">${e(h.summary)} · by ${e(h.publishedBy)}${h.draftVersion ? ` · draft v${e(h.draftVersion)}` : ''}</div>
       <div class="small muted"><code>${e(h.revision)}</code> · sha256 <code>${e(h.digest.slice(0, 12))}…</code></div>
       <div class="history-actions">
         <button type="button" data-action="history-view" data-id="${e(h.id)}">View document</button>
-        ${h.revision !== head?.revision ? `<button type="button" data-action="history-rollback" data-id="${e(h.id)}" ${role() === 'publisher' ? '' : 'disabled title="Publishers only"'}>Roll back to this…</button>` : ''}
+        ${h.revision !== head?.revision ? `<button type="button" data-action="history-rollback" data-id="${e(h.id)}" ${role() === 'publisher' ? '' : 'disabled title="Simulated publisher role only"'}>Roll back to this…</button>` : ''}
       </div></li>`).join('')}</ol>` : '<p class="muted">No publications yet.</p>'}`;
 }
 
@@ -717,7 +748,7 @@ async function publish(target) {
     await loadState();
   } catch (error) {
     toast(error.message, 'error');
-    if (error.status === 409) { S.reviews = {}; await loadState({ keepWorking: true }); }
+    if (error.status === 409 || error.status === 500) { S.reviews = {}; await loadState({ keepWorking: true }); }
     else if (error.data?.errors) { S.reviews[target] = { ...review, errors: error.data.errors }; renderSide(); }
   }
 }
@@ -861,8 +892,30 @@ document.addEventListener('click', async (event) => {
       closeDialog(); saveDraft();
       break;
     case 'resolve-remote': showConflict(S.pendingRemote); break;
+    case 'reconcile':
+      try { const r = await api('/api/reconcile', { method: 'POST', body: { target: el.dataset.target } }); toast(`Reconcile (${el.dataset.target}): ${r.state}`); await loadState({ keepWorking: isDirty() }); }
+      catch (error) { toast(error.message, 'error'); }
+      break;
+    case 'ack-drift':
+      openDialog(`<h2 id="dialog-title">Acknowledge Storage drift (${e(el.dataset.target)})</h2>
+        <p>${e(S.server.storage[el.dataset.target].reason)}.</p>
+        <p>Devices may already hold that document, so it is treated as possibly live: the next publication will be stamped newer than it and must be reviewed against it. Investigate who wrote it before continuing. Reconcile never overwrites drift by itself.</p>
+        <div class="dialog-actions"><button type="button" class="danger" data-action="ack-drift-go" data-target="${e(el.dataset.target)}" data-digest="${e(el.dataset.digest)}">Acknowledge (simulated)</button><button type="button" data-action="dialog-close">Cancel</button></div>`);
+      break;
+    case 'ack-drift-go':
+      try { await api('/api/drift/acknowledge', { method: 'POST', body: { target: el.dataset.target, digest: el.dataset.digest } }); closeDialog(); toast('Drift acknowledged. Publish a new version to supersede it.'); await loadState({ keepWorking: isDirty() }); }
+      catch (error) { toast(error.message, 'error'); }
+      break;
+    case 'dev-fault':
+      try { await api('/api/dev/fault', { method: 'POST', body: { target: el.dataset.target, fault: el.dataset.fault } }); toast(`Simulated fault armed for the next ${el.dataset.target} publish: ${el.dataset.fault}`, 'warn'); }
+      catch (error) { toast(error.message, 'error'); }
+      break;
+    case 'dev-external':
+      try { await api('/api/dev/external-write', { method: 'POST', body: { target: el.dataset.target, kind: el.dataset.kind } }); toast(`Simulated ${el.dataset.kind} write to ${el.dataset.target} Storage, bypassing the lock.`, 'warn'); await loadState({ keepWorking: isDirty() }); }
+      catch (error) { toast(error.message, 'error'); }
+      break;
     case 'dev-other-edit':
-      try { const { draft } = await api('/api/dev/simulate-other-editor', { method: 'POST', body: {} }); toast(`Simulated: publisher2 saved draft v${draft.version}. Edit something and save to see the conflict.`); }
+      try { const { draft } = await api('/api/dev/simulate-other-editor', { method: 'POST', body: {} }); toast(`Simulated: another session saved draft v${draft.version}. Edit something and save to see the conflict.`); }
       catch (error) { toast(error.message, 'error'); }
       break;
     case 'dev-reset':

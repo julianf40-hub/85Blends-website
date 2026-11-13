@@ -35,9 +35,10 @@ export const PRODUCTION_CONFIRMATION = 'PUBLISH PRODUCTION';
 
 // Simulated `gear_admins` table. Not a credential store: fictional identities only.
 export const ADMINS = {
-  'editor@example.test': { id: '00000000-0000-4000-8000-000000000001', role: 'editor', name: 'Example Editor' },
-  'publisher@example.test': { id: '00000000-0000-4000-8000-000000000002', role: 'publisher', name: 'Example Publisher' },
-  'publisher2@example.test': { id: '00000000-0000-4000-8000-000000000003', role: 'publisher', name: 'Second Publisher' },
+// Initial operating model: Julian is the only publisher. The editor account models an optional
+// future role (draft editing and image uploads only; no publishing, not even to Staging).
+  'publisher@example.test': { id: '00000000-0000-4000-8000-000000000002', role: 'publisher', name: 'Julian (simulated)' },
+  'editor@example.test': { id: '00000000-0000-4000-8000-000000000001', role: 'editor', name: 'Example editor (simulated, optional)' },
 };
 export const NON_ADMIN = 'viewer@example.test';
 
@@ -64,6 +65,8 @@ export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock
     heads: join(stateDir, 'heads.json'),
     history: join(stateDir, 'history.jsonl'),
     audit: join(stateDir, 'audit.jsonl'),
+    status: join(stateDir, 'publication-status.jsonl'),
+    driftAcks: join(stateDir, 'drift-acknowledgements.jsonl'),
     uploads: join(stateDir, 'uploads'),
     object: (target) => join(stateDir, 'objects', target, 'catalog-v1.json'),
   };
@@ -108,12 +111,14 @@ export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock
     return target ? lines.filter((h) => h.target === target) : lines;
   }
 
+  // "Live" = the latest RECORDED publication (database view). Storage may lag or drift from it;
+  // inspectStorage() reports that separately.
   async function live(target) {
     const heads = await readJSON(paths.heads, {});
     const head = heads[target] ?? null;
-    if (!head || !existsSync(paths.object(target))) return { head: null, document: null, bytes: null };
-    const bytes = new Uint8Array(await readFile(paths.object(target)));
-    return { head, document: JSON.parse(new TextDecoder().decode(bytes)), bytes };
+    const latest = (await history(target)).at(-1);
+    if (!head || !latest) return { head: null, document: null, bytes: null };
+    return { head, document: JSON.parse(latest.document), bytes: new TextEncoder().encode(latest.document) };
   }
 
   const audit = (event) => appendFile(paths.audit, JSON.stringify({ at: new Date(clock()).toISOString(), ...event }) + '\n');
@@ -135,15 +140,15 @@ export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock
   // ---- auth (stands in for verifying the Supabase JWT and reading gear_admins) -----------------
   function authenticate(req) {
     const email = String(req.headers['x-prototype-user'] ?? '');
-    if (!email) throw new HttpError(401, 'unauthenticated', 'Sign in required');
+    if (!email) throw new HttpError(401, 'unauthenticated', 'Simulated sign-in required');
     const admin = ADMINS[email];
-    if (!admin) throw new HttpError(403, 'not_admin', 'This account is not a Recommended Gear administrator');
+    if (!admin) throw new HttpError(403, 'not_admin', 'Simulated account is not in the simulated gear_admins table');
     const aal = req.headers['x-prototype-aal'] === 'aal2' ? 'aal2' : 'aal1';
     return { email, ...admin, aal };
   }
   function requireWrite(user, { role } = {}) {
-    if (user.aal !== 'aal2') throw new HttpError(403, 'mfa_required', 'Verify with your authenticator app (MFA) before making changes');
-    if (role === 'publisher' && user.role !== 'publisher') throw new HttpError(403, 'publisher_required', 'Only publishers can publish to Production or roll back');
+    if (user.aal !== 'aal2') throw new HttpError(403, 'mfa_required', 'Simulated MFA: tick "Simulated MFA (aal2)" before making changes');
+    if (role === 'publisher' && user.role !== 'publisher') throw new HttpError(403, 'publisher_required', 'Simulated role check: only the publisher can publish (Staging or Production) or roll back');
   }
   function requireSameOrigin(req) {
     const origin = req.headers.origin;
@@ -192,62 +197,157 @@ export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock
     };
   }
 
+  // ---- simulated Storage (no compare-and-swap, like Supabase Storage) ---------------------------
+  // The object is written separately from the "database" (history/heads/status files). Faults can
+  // be injected to exercise crashes, uncertain uploads and writers that bypass the lock.
+  const faults = { staging: null, production: null };
+  class UploadUncertain extends Error {}
+  async function readOrigin(target) {
+    return existsSync(paths.object(target)) ? new Uint8Array(await readFile(paths.object(target))) : null;
+  }
+  async function storageWrite(target, bytes, fault) {
+    if (fault === 'upload_timeout') throw new UploadUncertain('the upload timed out before Storage answered (simulated: it was NOT stored)');
+    await writeAtomic(paths.object(target), bytes);
+    if (fault === 'response_lost') throw new UploadUncertain('the connection dropped after the body was sent (simulated: it WAS stored)');
+  }
+  // Publication status is a separate append-only log, so history rows are never rewritten.
+  async function statuses() {
+    if (!existsSync(paths.status)) return new Map();
+    const map = new Map();
+    for (const line of (await readFile(paths.status, 'utf8')).split('\n').filter(Boolean)) {
+      const s = JSON.parse(line);
+      map.set(s.id, s);
+    }
+    return map;
+  }
+  const recordStatus = (id, status, note) => appendFile(paths.status, JSON.stringify({ id, status, note, at: new Date(clock()).toISOString() }) + '\n');
+  async function driftAcks(target) {
+    if (!existsSync(paths.driftAcks)) return [];
+    return (await readFile(paths.driftAcks, 'utf8')).split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((a) => a.target === target);
+  }
+
+  /**
+   * Compares the Storage origin with the latest RECORDED publication. Never trusts the CDN.
+   * repair=true (only under the publish lock) re-sends the recorded bytes of a publication whose
+   * upload never landed. Anything else that does not match is drift and blocks publishing until a
+   * publisher acknowledges it.
+   */
+  async function inspectStorage(target, { repair = false } = {}) {
+    const rows = await history(target);
+    const latest = rows.at(-1) ?? null;
+    const origin = await readOrigin(target);
+    const originDigest = origin ? sha256(origin) : null;
+    const status = latest ? (await statuses()).get(latest.id)?.status ?? 'verified' : null;
+    const base = { latestRevision: latest?.revision ?? null, latestStatus: status, originDigest };
+    if (!latest) return origin ? { ...base, state: 'drift', reason: 'Storage holds a catalog but no publication is recorded' } : { ...base, state: 'empty' };
+    if (originDigest === latest.digest) {
+      if (status !== 'verified' && repair) await recordStatus(latest.id, 'verified', 'reconciled: origin holds the recorded bytes');
+      return { ...base, state: status === 'verified' ? 'in_sync' : repair ? 'repaired' : 'pending', latestStatus: repair ? 'verified' : status };
+    }
+    const previous = rows.at(-2) ?? null;
+    const neverLanded = ['recorded', 'uncertain'].includes(status) && (originDigest === null || originDigest === previous?.digest);
+    if (neverLanded) {
+      if (!repair) return { ...base, state: 'pending', reason: 'the latest recorded publication has not reached Storage yet' };
+      await storageWrite(target, new TextEncoder().encode(latest.document), null); // identical recorded bytes
+      const readBack = await readOrigin(target);
+      const ok = readBack && sha256(readBack) === latest.digest;
+      await recordStatus(latest.id, ok ? 'verified' : 'uncertain', 're-sent identical recorded bytes during reconcile');
+      return { ...base, state: ok ? 'repaired' : 'pending', latestStatus: ok ? 'verified' : 'uncertain' };
+    }
+    const known = rows.find((r) => r.digest === originDigest);
+    let foreign = null;
+    try { foreign = JSON.parse(new TextDecoder().decode(origin)); } catch { /* not JSON */ }
+    const acknowledged = (await driftAcks(target)).some((a) => a.digest === originDigest);
+    return {
+      ...base, state: 'drift', acknowledged,
+      reason: known ? `Storage holds an OLDER recorded publication (${known.revision}): a late upload or a manual re-upload overwrote the latest`
+        : 'Storage holds bytes no publication recorded: a writer bypassed the publish lock (CLI, dashboard upload or another tool)',
+      originRevision: foreign?.revision ?? null, originPublishedAt: typeof foreign?.publishedAt === 'number' ? foreign.publishedAt : null,
+    };
+  }
+
   async function publish({ user, target, brands, meta, expectedLiveRevision, confirmation, draftVersion = null, rollbackOf = null }) {
     if (!TARGETS.includes(target)) throw new HttpError(400, 'bad_target', 'target must be staging or production');
-    requireWrite(user, { role: target === 'production' ? 'publisher' : undefined });
+    // Initial operating model: publishers only, for Staging AND Production.
+    requireWrite(user, { role: 'publisher' });
     if (target === 'production' && confirmation !== PRODUCTION_CONFIRMATION) {
       throw new HttpError(400, 'confirmation_required', `Type ${PRODUCTION_CONFIRMATION} to publish to Production`);
     }
     return withPublishLock(async () => {
-      const { head, document: liveDoc, bytes: liveBytes } = await live(target);
+      // 1. Reconcile Storage with the database BEFORE anything else (repairs a crashed or uncertain upload).
+      const storage = await inspectStorage(target, { repair: true });
+      if (storage.state === 'drift' && !storage.acknowledged) {
+        throw new HttpError(409, 'storage_drift', `${target}: ${storage.reason}. A publisher must review and acknowledge it before publishing.`, { storage });
+      }
+      if (storage.state === 'pending') throw new HttpError(409, 'storage_uncertain', `${target}: the previous upload is still unconfirmed; reconcile again`, { storage });
+      const heads = await readJSON(paths.heads, {});
+      const head = heads[target] ?? null;
       if ((expectedLiveRevision ?? null) !== (head?.revision ?? null)) {
         throw new HttpError(409, 'live_changed', `${target} changed since you reviewed it (now ${head?.revision ?? 'nothing published'}). Review the new changes, then publish again.`, { live: head });
+      }
+      const now = Math.floor(clock() / 1000);
+      // An acknowledged foreign document may be on devices: everything after it must be newer.
+      const foreignFloor = storage.state === 'drift' ? storage.originPublishedAt ?? 0 : 0;
+      const highest = Math.max(head?.publishedAt ?? 0, foreignFloor);
+      if (highest > now + MAX_FUTURE_SKEW_SECONDS) {
+        throw new HttpError(409, 'live_in_future', `The ${target} publishedAt (${highest}) is more than ${MAX_FUTURE_SKEW_SECONDS} s in the future; resolve the clock problem first`);
       }
       const reviewResult = await review(target, { brands }, meta, { applyApprovalGate: target === 'production' });
       if (reviewResult.errors.length) throw new HttpError(422, 'invalid', 'The catalog cannot be published', { errors: reviewResult.errors });
 
-      const now = Math.floor(clock() / 1000);
-      if (head && head.publishedAt > now + MAX_FUTURE_SKEW_SECONDS) {
-        // Same guard as publish_catalog.py: a live publishedAt far in the future means a clock was
-        // wrong. Stamping head + 1 would push every later publication further into the future.
-        throw new HttpError(409, 'live_in_future', `The live ${target} publishedAt (${head.publishedAt}) is more than ${MAX_FUTURE_SKEW_SECONDS} s in the future; resolve the clock problem first`);
-      }
-      const publishedAt = Math.max(now, (head?.publishedAt ?? 0) + 1);
+      const publishedAt = Math.max(now, highest + 1);
       const document = { schemaVersion: 1, revision: randomUUID(), publishedAt, brands };
       const bytes = encodeCatalog(document);
+      const rows = await history(target);
+      const used = [...rows.map((h) => h.revision), ...(storage.originRevision ? [storage.originRevision] : [])];
       try {
         parseBytes(bytes);
-        if (liveDoc) {
-          const used = (await history(target)).map((h) => h.revision);
-          if (checkSuccessor(liveDoc, liveBytes, document, bytes, used) !== 'newer') throw new CatalogRejected('identical to the live publication');
+        const live = storage.state === 'drift' ? await readOrigin(target) : head ? new TextEncoder().encode(rows.at(-1).document) : null;
+        if (live) {
+          const liveDoc = JSON.parse(new TextDecoder().decode(live));
+          if (checkSuccessor(liveDoc, live, document, bytes, used) !== 'newer') throw new CatalogRejected('identical to the live publication');
         }
       } catch (error) {
         if (error instanceof CatalogRejected) throw new HttpError(422, 'invalid', error.message, { errors: [{ path: '', message: error.message }] });
         throw error;
       }
       const digest = sha256(bytes);
-      const diff = diffCatalogs(liveDoc, document);
+      const previousDoc = rows.at(-1) ? JSON.parse(rows.at(-1).document) : null;
+      const diff = diffCatalogs(previousDoc, document);
       const entry = {
         id: randomUUID(), target, revision: document.revision, publishedAt, publishedBy: user.email,
         digest, document: new TextDecoder().decode(bytes), summary: summarize(diff), rollbackOf, draftVersion,
         validatorVersion: VALIDATOR_VERSION, createdAt: new Date(clock()).toISOString(),
       };
-      // History row and head are recorded BEFORE the object upload (see IMPLEMENTATION_PLAN.md).
+      // 2. "Commit": history row (append-only), status 'recorded', head. The head is the monotonic
+      //    stamping floor; it may run ahead of Storage until the upload is verified.
       await appendFile(paths.history, JSON.stringify(entry) + '\n');
-      const heads = await readJSON(paths.heads, {});
+      await recordStatus(entry.id, 'recorded', 'committed; upload not yet attempted');
       heads[target] = { revision: document.revision, publishedAt, digest };
       await writeAtomic(paths.heads, JSON.stringify(heads, null, 2));
-      // Simulated Storage upload (Content-Type application/json, Cache-Control max-age=60).
-      await writeAtomic(paths.object(target), bytes);
-      const readBack = new Uint8Array(await readFile(paths.object(target)));
-      const verified = sha256(readBack) === digest;
       await audit({ event: rollbackOf ? 'rollback' : 'publish', target, user: user.email, revision: document.revision, publishedAt, summary: entry.summary });
-      return {
+      const fault = faults[target];
+      faults[target] = null;
+      if (fault === 'crash_after_commit') {
+        throw new HttpError(500, 'simulated_crash', 'Simulated crash after the database commit and before the Storage upload. The next publish or Reconcile re-sends the recorded bytes.', { revision: document.revision });
+      }
+      // 3. Upload while still holding the lock, then read the ORIGIN back (never the CDN).
+      const result = {
         simulated: true, target, publicationId: entry.id, revision: document.revision, publishedAt, digest,
-        bytes: bytes.length, summary: entry.summary, readBack: verified ? 'verified (local simulated object)' : 'MISMATCH',
+        bytes: bytes.length, summary: entry.summary, warnings: reviewResult.warnings,
         objectPath: `recommended-gear/${target === 'staging' ? 'staging/' : ''}catalog-v1.json (simulated, local file only)`,
-        warnings: reviewResult.warnings,
       };
+      try {
+        await storageWrite(target, bytes, fault);
+      } catch (error) {
+        if (!(error instanceof UploadUncertain)) throw error;
+        await recordStatus(entry.id, 'uncertain', error.message);
+        return { ...result, storage: 'uncertain', readBack: `UNCERTAIN: ${error.message}. Recorded; Reconcile will check the origin and re-send the identical bytes if needed.` };
+      }
+      const readBack = await readOrigin(target);
+      const verified = readBack && sha256(readBack) === digest;
+      await recordStatus(entry.id, verified ? 'verified' : 'conflict', verified ? 'origin read-back matches' : 'origin holds different bytes after upload');
+      return { ...result, storage: verified ? 'verified' : 'conflict', readBack: verified ? 'verified: origin holds exactly the recorded bytes (simulated)' : 'CONFLICT: origin holds different bytes' };
     });
   }
 
@@ -274,6 +374,8 @@ export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock
       return send(res, 200, {
         draft, live: { staging: { head: staging.head, document: staging.document }, production: { head: production.head, document: production.document } },
         publishedDraftVersions: Object.fromEntries(TARGETS.map((t) => [t, all.filter((h) => h.target === t).at(-1)?.draftVersion ?? null])),
+        storage: Object.fromEntries(await Promise.all(TARGETS.map(async (t) => [t, await inspectStorage(t)]))),
+        faults: { ...faults },
       });
     }
 
@@ -327,9 +429,31 @@ export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock
         expectedLiveRevision: body.expectedLiveRevision, confirmation: body.confirmation, rollbackOf: entry.id }));
     }
 
+    if (method === 'POST' && route === '/api/reconcile') {
+      const { target } = await readJSONBody(req);
+      if (!TARGETS.includes(target)) throw new HttpError(400, 'bad_target', 'target must be staging or production');
+      requireWrite(user, { role: 'publisher' });
+      return send(res, 200, await withPublishLock(() => inspectStorage(target, { repair: true })));
+    }
+
+    if (method === 'POST' && route === '/api/drift/acknowledge') {
+      const body = await readJSONBody(req);
+      if (!TARGETS.includes(body.target)) throw new HttpError(400, 'bad_target', 'target must be staging or production');
+      requireWrite(user, { role: 'publisher' });
+      return send(res, 200, await withPublishLock(async () => {
+        const storage = await inspectStorage(body.target);
+        if (storage.state !== 'drift' || storage.originDigest !== body.digest) throw new HttpError(409, 'drift_changed', 'Storage changed since you reviewed it; reload');
+        await appendFile(paths.driftAcks, JSON.stringify({ target: body.target, digest: body.digest, revision: storage.originRevision,
+          publishedAt: storage.originPublishedAt, by: user.email, at: new Date(clock()).toISOString() }) + '\n');
+        await audit({ event: 'drift_acknowledged', target: body.target, user: user.email, digest: body.digest, revision: storage.originRevision });
+        return { acknowledged: true, storage: await inspectStorage(body.target) };
+      }));
+    }
+
     if (method === 'GET' && route === '/api/history') {
       const target = url.searchParams.get('target');
-      const list = (await history(TARGETS.includes(target) ? target : null)).reverse();
+      const status = await statuses();
+      const list = (await history(TARGETS.includes(target) ? target : null)).reverse().map((h) => ({ ...h, storageStatus: status.get(h.id)?.status ?? 'verified' }));
       return send(res, 200, { history: list });
     }
 
@@ -376,14 +500,39 @@ export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock
         const catalog = structuredClone(current.catalog);
         const first = catalog.brands.find((b) => b.kind === 'brand');
         if (first) first.tagline = `${first.tagline.replace(/ \(edited elsewhere\)$/, '')} (edited elsewhere)`.slice(0, 120);
-        const next = { ...current, catalog, version: current.version + 1, updatedBy: 'publisher2@example.test', updatedAt: new Date(clock()).toISOString() };
+        const next = { ...current, catalog, version: current.version + 1, updatedBy: 'publisher@example.test (another tab or device, simulated)', updatedAt: new Date(clock()).toISOString() };
         await writeAtomic(paths.draft, JSON.stringify(next, null, 2));
-        await audit({ event: 'draft_save', user: 'publisher2@example.test', version: next.version, summary: 'simulated concurrent edit' });
+        await audit({ event: 'draft_save', user: 'publisher@example.test (another session)', version: next.version, summary: 'simulated concurrent edit' });
         return send(res, 200, { draft: next });
       });
     }
+    if (method === 'POST' && route === '/api/dev/fault') {
+      const { target, fault } = await readJSONBody(req);
+      if (!TARGETS.includes(target) || ![null, 'crash_after_commit', 'response_lost', 'upload_timeout'].includes(fault)) throw new HttpError(400, 'bad_fault', 'unknown fault');
+      faults[target] = fault;
+      return send(res, 200, { faults });
+    }
+    if (method === 'POST' && route === '/api/dev/external-write') {
+      // Simulates a writer that bypasses the publish lock: the staging CLI (publish_catalog.py --upload),
+      // a manual dashboard upload, or a late "zombie" upload from a timed-out publisher.
+      const { target, kind } = await readJSONBody(req);
+      const rows = await history(target);
+      let bytes;
+      if (kind === 'older' && rows.length >= 2) bytes = new TextEncoder().encode(rows.at(-2).document);
+      else if (kind === 'cli') {
+        const base = rows.at(-1) ? JSON.parse(rows.at(-1).document) : { schemaVersion: 1, brands: [] };
+        const now = Math.floor(clock() / 1000);
+        bytes = encodeCatalog({ ...base, revision: `staging-${now}-cli-${randomBytes(4).toString('hex')}`, publishedAt: Math.max(now, (base.publishedAt ?? 0) + 1),
+          brands: base.brands.filter((b) => b.kind !== 'brand' || b.id !== base.brands.find((x) => x.kind === 'brand')?.id) });
+      } else throw new HttpError(400, 'bad_kind', 'kind must be "older" (needs two publications) or "cli"');
+      await writeAtomic(paths.object(target), bytes);
+      await audit({ event: 'simulated_external_write', target, kind });
+      return send(res, 200, { written: true, digest: sha256(bytes) });
+    }
     if (method === 'POST' && route === '/api/dev/reset') {
       requireWrite(user);
+      faults.staging = null;
+      faults.production = null;
       await initialize({ force: true });
       return send(res, 200, { reset: true });
     }

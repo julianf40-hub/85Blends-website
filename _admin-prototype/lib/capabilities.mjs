@@ -1,4 +1,5 @@
-// What the website can change WITHOUT an app release, and what needs iOS and Android changes.
+// What the website can change WITHOUT an app release, and what needs an iOS release (and Android
+// work once Android supports the remote catalog; today no Android client reads it).
 // The admin edits data inside the v1 contract. It cannot create app functionality: layouts,
 // styling, copy fixed in the apps, and new kinds are native code on each platform.
 
@@ -16,11 +17,11 @@ export const EDITABLE_WITHOUT_RELEASE = [
 ];
 
 export const REQUIRES_APP_RELEASE = [
-  { area: 'New card layout or kind', detail: 'A new `kind` (e.g. video, carousel of products, comparison) is skipped by v1 apps. It needs native SwiftUI and Compose work, then a v1 optional addition or a catalog-v2.json.' },
+  { area: 'New card layout or kind', detail: 'A new `kind` (e.g. video, carousel of products, comparison) is skipped by v1 apps. It needs native SwiftUI work in iOS (and Compose in a future Android client), then a v1 optional addition or a catalog-v2.json.' },
   { area: 'A second sponsor / different sponsor layout', detail: 'Only one `rvp_wheels` entry is allowed and its id is reserved. Another sponsor needs a new kind and app code.' },
   { area: 'Badges and fixed copy', detail: '"Featured Brand", "Sponsor", "Sponsored by {name}", the empty state and "About Featured Brands" are app copy.' },
   { area: 'Colors, fonts, themes, per-brand styling', detail: 'Neutral theme styling is native. eFlexFuel orange and the RVP logo plate apply by stable ID only.' },
-  { area: 'Bundled artwork for a new ID', detail: 'New bundled wheel/brand artwork needs assets in both apps. Until then, use remote imageURL / logo / heroImageURL.' },
+  { area: 'Bundled artwork for a new ID', detail: 'New bundled wheel/brand artwork needs an iOS release (and Android resources once Android supports the catalog). Until then, use remote imageURL / logo / heroImageURL.' },
   { area: 'Offer types', detail: 'Percent-off, non-USD, multiple offers per brand, or offers on the sponsor card are not in v1.' },
   { area: 'Independent More order or More-only cards', detail: 'More uses catalog order (sponsor banner first, then Featured Brands). A separate order or More-only entries need a contract and app change.' },
   { area: 'Sections, categories, filtering, search, personalization or per-region targeting', detail: 'Not in v1. Every device receives the same document.' },

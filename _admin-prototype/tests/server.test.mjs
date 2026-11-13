@@ -74,13 +74,17 @@ test('the browser cannot set revision or publishedAt', async () => {
   assert.equal(r.data.draft.catalog.publishedAt, undefined);
 });
 
-test('editors may publish to staging but not production', async () => {
+test('operating model: only the publisher may publish, including Staging', async () => {
   const s = await state();
-  const r = await call('/api/publish', { method: 'POST', user: 'editor@example.test', body: { target: 'production', draftVersion: s.draft.version, expectedLiveRevision: s.live.production.head.revision, confirmation: PRODUCTION_CONFIRMATION } });
-  assert.equal(r.status, 403);
-  const staged = await call('/api/publish', { method: 'POST', user: 'editor@example.test', body: { target: 'staging', draftVersion: s.draft.version, expectedLiveRevision: s.live.staging.head?.revision ?? null } });
+  for (const target of ['staging', 'production']) {
+    const r = await call('/api/publish', { method: 'POST', user: 'editor@example.test', body: { target, draftVersion: s.draft.version, expectedLiveRevision: s.live[target].head?.revision ?? null, confirmation: PRODUCTION_CONFIRMATION } });
+    assert.equal(r.status, 403, target);
+    assert.equal(r.data.error, 'publisher_required');
+  }
+  const staged = await publish('staging');
   assert.equal(staged.status, 200, JSON.stringify(staged.data));
   assert.equal(staged.data.simulated, true);
+  assert.equal(staged.data.storage, 'verified');
 });
 
 test('production is blocked by a pending approval and needs the typed confirmation', async () => {
@@ -191,4 +195,68 @@ test('security headers and static path containment', async () => {
     const body = await r.text();
     assert.ok(!body.includes('createAdminServer'), path);
   }
+});
+
+// ---- database + Storage failure modes (Storage has no compare-and-swap) ----------------------
+const fault = (target, f) => call('/api/dev/fault', { method: 'POST', body: { target, fault: f } });
+const storageOf = async (target) => (await state()).storage[target];
+const objectBytes = (target) => readFile(join(stateDir, 'objects', target, 'catalog-v1.json'), 'utf8');
+
+test('crash after the database commit: recorded but not uploaded, repaired by reconcile with identical bytes', async () => {
+  await saveDraft((w) => { w.catalog.brands[0].priceText = 'From $91'; });
+  await fault('staging', 'crash_after_commit');
+  const crashed = await publish('staging');
+  assert.equal(crashed.status, 500);
+  const pending = await storageOf('staging');
+  assert.equal(pending.state, 'pending');
+  assert.equal(pending.latestRevision, crashed.data.revision);
+  assert.ok(!(await objectBytes('staging')).includes(crashed.data.revision));
+  const fixed = await call('/api/reconcile', { method: 'POST', body: { target: 'staging' } });
+  assert.equal(fixed.data.state, 'repaired');
+  const { data } = await call('/api/history?target=staging');
+  assert.equal(await objectBytes('staging'), data.history[0].document); // the exact recorded bytes
+});
+
+test('uncertain uploads (timeout / lost response) are reported as uncertain, then reconciled first', async () => {
+  for (const f of ['upload_timeout', 'response_lost']) {
+    await saveDraft((w) => { w.catalog.brands[0].priceText = `From $${f.length}`; });
+    await fault('staging', f);
+    const r = await publish('staging');
+    assert.equal(r.status, 200);
+    assert.equal(r.data.storage, 'uncertain', f);
+    assert.equal((await storageOf('staging')).state, 'pending');
+    // the next publish reconciles the unconfirmed upload under the lock before stamping a new one
+    const again = await publish('staging');
+    assert.equal(again.status, 200, JSON.stringify(again.data));
+    assert.equal(again.data.storage, 'verified');
+    assert.ok(again.data.publishedAt > r.data.publishedAt);
+  }
+});
+
+test('a writer that bypasses the lock (CLI or dashboard) is detected and blocks publishing until acknowledged', async () => {
+  const w = await call('/api/dev/external-write', { method: 'POST', body: { target: 'staging', kind: 'cli' } });
+  assert.equal(w.status, 200);
+  const drift = await storageOf('staging');
+  assert.equal(drift.state, 'drift');
+  assert.match(drift.reason, /bypassed the publish lock/);
+  const blocked = await publish('staging');
+  assert.equal(blocked.status, 409);
+  assert.equal(blocked.data.error, 'storage_drift');
+  assert.equal((await call('/api/drift/acknowledge', { method: 'POST', user: 'editor@example.test', body: { target: 'staging', digest: drift.originDigest } })).status, 403);
+  const ack = await call('/api/drift/acknowledge', { method: 'POST', body: { target: 'staging', digest: drift.originDigest } });
+  assert.equal(ack.status, 200);
+  const next = await publish('staging');
+  assert.equal(next.status, 200, JSON.stringify(next.data));
+  // devices may already hold the foreign document: the superseding publication must be newer than it
+  assert.ok(next.data.publishedAt > drift.originPublishedAt);
+  assert.equal((await storageOf('staging')).state, 'in_sync');
+});
+
+test('an older publication reappearing (late upload or manual re-upload) is drift, never silently fixed', async () => {
+  await call('/api/dev/external-write', { method: 'POST', body: { target: 'staging', kind: 'older' } });
+  const drift = await storageOf('staging');
+  assert.equal(drift.state, 'drift');
+  assert.match(drift.reason, /OLDER recorded publication/);
+  const r = await call('/api/reconcile', { method: 'POST', body: { target: 'staging' } });
+  assert.equal(r.data.state, 'drift');
 });
