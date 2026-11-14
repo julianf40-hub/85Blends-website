@@ -21,6 +21,7 @@ let phase = ''; // the wait currently in progress (named in failure output)
 const fnLog = []; // every gear-publish response seen by session A
 const at = (name) => { phase = name; };
 const step = async (name, run) => {
+  phase = name; // every step names its phase, so sub-phases are never shown without context
   const started = Date.now();
   try { await run(); results.push({ name, ok: true, ms: Date.now() - started }); console.log(`ok   ${name}`); }
   catch (error) {
@@ -90,14 +91,23 @@ async function signIn(page, who, knownSecret = null) {
   return { secret, verifiedAt };
 }
 let lastEdit = null; // what the most recent editField typed, for failure snapshots
+const INJECT = process.env.GEAR_UI_INJECT_FAILURE ?? null;
+if (INJECT && !['toast-suppressed', 'save-blocked', 'edit-lost'].includes(INJECT)) throw new Error(`unknown GEAR_UI_INJECT_FAILURE ${INJECT}`);
+let injected = false;
 async function editField(page, rel, value) {
   const outer = phase;
   lastEdit = { rel, value };
   at(`${outer} › editField: fill + save`);
+  // TEST-ONLY deliberate failure at the first save (tools/ui-diagnostics-selftest.mjs), to check that the
+  // failure snapshot classifies correctly. Never set in a normal run; this script is not deployed.
+  const inject = INJECT && !injected ? INJECT : null;
+  if (inject) injected = true;
+  if (inject === 'save-blocked' || inject === 'edit-lost') await page.route('**/rest/v1/rpc/save_gear_draft', (r) => r.abort('failed'));
   await page.fill(`#editor [data-bind="${rel}"]`, value);
   await page.click('[data-action=save]');
-  at(`${outer} › editField: wait for the "Draft saved" toast`);
-  const out = await toastText(page, /Draft saved · version \d+/);
+  if (inject === 'edit-lost') { await sleep(500); await page.reload(); await page.waitForSelector('#brand-list li'); } // the unsaved edit is gone
+  at(`${outer} › editField: wait for the "Draft saved" toast${inject ? ` [INJECTED: ${inject}]` : ''}`);
+  const out = await toastText(page, inject === 'toast-suppressed' ? /INJECTED-NEVER-MATCHES/ : /Draft saved · version \d+/, inject ? 5000 : 15000);
   at(outer);
   return out;
 }

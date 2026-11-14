@@ -253,6 +253,26 @@ The final version decides on the proposed row in the INSERT phase of the upsert.
 
 ## Local validation
 
+**After `7aca7c0` (affected checks only; NOT a full run):**
+- `tests/replay_boundaries.test.mjs` (promoted from a scratch run): environment and fingerprint
+  races, with the intent present and after cleanup (the fallback path), plus the publisher boundary
+  at the database. Together with `tests/deploy_package.test.mjs`: **11 / 11**. `deploy/package`
+  matches a fresh build and contains no test tools.
+- `tools/ui-diagnostics-selftest.mjs` (test-only; never in the package): three deliberate failures
+  at the first save, **3 / 3 classified correctly**:
+  - `toast-suppressed`: persisted v2 → "save PERSISTED";
+  - `save-blocked`: persisted v1, page "Unsaved changes", edit retained → "not persisted; unsaved
+    edit retained";
+  - `edit-lost`: persisted v1, editor shows the stored text → "not persisted; edit not visible".
+
+  Phase labels always start with the step name.
+- Normal browser run: **19 / 19**. Both original timeouts stay **unresolved**; the self-test only
+  shows the diagnostics work.
+
+**Full run on `7aca7c0`:** `tests/*.test.mjs` **59 tests: 57 pass, 0 fail, 2 skipped**.
+`tools/check-deploy-package.sh`: **36 pass, 8 skipped (fault-dependent), 0 fail**; no unexpected
+schema differences.
+
 **Full run on pushed head `d0c02eb` (`claude/admin-backend-hosted-prep`), 2026-11-14:**
 - `tests/*.test.mjs`, once, on a clean tree: **57 tests: 54 pass, 1 fail, 2 skipped** (package-only).
 - **The failure was a real regression**, introduced in `3b135bd` by the defense-in-depth check in
