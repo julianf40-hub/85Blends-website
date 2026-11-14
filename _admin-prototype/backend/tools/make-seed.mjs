@@ -33,7 +33,7 @@ values (gen_random_uuid(), ${q(u.id)}, ${q(u.id)}, jsonb_build_object('sub', ${q
 // expiry test runs quickly). Production would use the migration default of 900 s.
 export const LOCAL_STEP_UP_SECONDS = 40;
 sql += `update public.gear_settings set production_step_up_seconds = ${LOCAL_STEP_UP_SECONDS};\n`;
-sql += `insert into public.gear_catalog_drafts (id, catalog, meta, version) values ('main', ${q(JSON.stringify(draft.catalog))}::jsonb, ${q(JSON.stringify(draft.meta))}::jsonb, 1);\n`;
+sql += `insert into public.gear_catalog_drafts (id, catalog, meta, version) values ('main', ${q(JSON.stringify(draft.catalog))}::jsonb, ${q(JSON.stringify(draft.meta))}::jsonb, 1)\n  on conflict (id) do update set catalog = excluded.catalog, meta = excluded.meta, version = excluded.version;\n`;
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   writeFileSync(new URL('supabase/seed.sql', root), sql);

@@ -32,8 +32,10 @@ const SERVICE_KEY = Deno.env.get('GEAR_PUBLISHER_SECRET_KEY') ?? Deno.env.get('S
 const PINNED_PUBLISHER = Deno.env.get('GEAR_PUBLISHER_USER_ID') ?? '';
 const STEP_UP_SECONDS = Number(Deno.env.get('GEAR_PRODUCTION_STEP_UP_SECONDS') ?? 900);
 const UPLOAD_TIMEOUT_SECONDS = Number(Deno.env.get('GEAR_UPLOAD_TIMEOUT_SECONDS') ?? 20); // image uploads
+// @test-only:start (removed by tools/build-deploy-package.mjs; never in the deployment package)
 const TEST_FAULTS = Deno.env.get('GEAR_ALLOW_TEST_FAULTS') === 'local-only'
   && /^http:\/\/(kong|127\.0\.0\.1|localhost)(:\d+)?$/.test(SUPABASE_URL);
+// @test-only:end
 const MAX_FUTURE_SKEW = 300;
 const BUCKET = 'recommended-gear';
 const CONFIRMATION = 'PUBLISH PRODUCTION';
@@ -81,6 +83,7 @@ async function sha256(bytes: Uint8Array) {
 
 const b64 = (text: string) => btoa(String.fromCharCode(...new TextEncoder().encode(text)));
 
+// @test-only:start
 // Local test faults: a comma-separated list in x-gear-test-fault (honored only in local test mode).
 const faultParts = (fault: string | null) => (fault ? fault.split(',').map((f) => f.trim()).filter(Boolean) : []);
 const hasFault = (fault: string | null, name: string) => faultParts(fault).includes(name);
@@ -88,6 +91,7 @@ const pause = async (fault: string | null, point: string) => {
   const m = faultParts(fault).map((f) => new RegExp(`^pause_${point}:(\\d{1,5})$`).exec(f)).find(Boolean);
   if (m) await new Promise((r) => setTimeout(r, Number(m[1])));
 };
+// @test-only:end
 
 // ---------------------------------------------------------------- authorization
 type Caller = { id: string; email: string; role: string | null; aal: string; amr: { method: string; timestamp: number }[]; jwt: string };
@@ -388,10 +392,21 @@ async function commit(caller: Caller, operationId: string, fault: string | null)
     if (mapped) throw new HttpError(mapped[0], mapped[1], error.message.replace(/^[a-z_]+: /, ''));
     throw error;
   }
+  // @test-only:start
   if (hasFault(fault, 'response_lost')) {
     throw new HttpError(502, 'test_response_lost', 'Test fault: the commit succeeded, but this response is reported as lost');
   }
+  // @test-only:end
   return { ...body, storage: 'committed' };
+}
+
+/** What the request asked for, independent of the operation ID. Stored with the intent and the publication. */
+async function requestFingerprint(target: string, body: any) {
+  return sha256(new TextEncoder().encode(JSON.stringify({
+    target, action: body.rollbackOf ? 'rollback' : 'publish', reviewDigest: body.reviewDigest ?? null,
+    draftVersion: body.rollbackOf ? null : body.draftVersion ?? null, expectedLiveRevision: body.expectedLiveRevision ?? null,
+    rollbackOf: body.rollbackOf ?? null,
+  })));
 }
 
 async function publish(caller: Caller, body: any, fault: string | null) {
@@ -400,12 +415,17 @@ async function publish(caller: Caller, body: any, fault: string | null) {
   if (target === 'production' && body.confirmation !== CONFIRMATION) throw new HttpError(400, 'confirmation_required', `Type ${CONFIRMATION} to publish to Production`);
   const operationId = String(body.operationId ?? '');
   if (!UUID.test(operationId)) throw new HttpError(400, 'operation_id_required', 'operationId (a UUID the client keeps for retries) is required');
-  const sameRequest = (i: any) => i.user_id === caller.id && i.target === target && i.request_digest === body.reviewDigest;
+  // The operation is bound to this publisher, this environment and this exact request.
+  const fingerprint = await requestFingerprint(target, body);
+  const sameRequest = (i: any) => i.user_id === caller.id && i.target === target && i.request_digest === fingerprint;
 
-  // A retry of a known operation never prepares another publication: it commits or returns the original.
-  const known = await rpc('gear_find_intent', { p_operation_id: operationId });
+  // A retry of a known operation never prepares another publication. Pending: commit that same
+  // intent. Committed (still an intent, or recognized from the append-only publication after
+  // cleanup): return the original. Any mismatch is a conflict, and nothing is revealed about it.
+  const known = await rpc('gear_find_operation', { p_operation_id: operationId });
   if (known) {
     if (!sameRequest(known)) throw new HttpError(409, 'operation_conflict', 'This operation ID belongs to a different request');
+    if (known.state === 'committed') return { ...(await rpc('gear_operation_result', { p_operation_id: operationId })), storage: 'committed' };
     return commit(caller, operationId, fault);
   }
 
@@ -441,14 +461,16 @@ async function publish(caller: Caller, body: any, fault: string | null) {
   }
 
   const intent = await rpc('gear_prepare_intent', { p: {
-    operation_id: operationId, target, user_id: caller.id, request_digest: body.reviewDigest, revision: document.revision,
+    operation_id: operationId, target, user_id: caller.id, request_digest: fingerprint, revision: document.revision,
     published_at: document.publishedAt, document: new TextDecoder().decode(bytes), digest: await sha256(bytes),
     summary: summarize(diffCatalogs(r.baselineDoc, document)), expected_publication_id: r.current?.id ?? null,
     draft_version: r.draftVersion, rollback_of: r.rollbackOf, validator_version: VALIDATOR_VERSION,
   } });
   // A concurrent duplicate may have prepared this operation first: use its intent, if it is the same request.
   if (!intent.created && !sameRequest(intent)) throw new HttpError(409, 'operation_conflict', 'This operation ID belongs to a different request');
+  // @test-only:start
   await pause(fault, 'before_commit'); // local tests: a publisher delayed between validation and commit
+  // @test-only:end
   return commit(caller, operationId, fault);
 }
 
@@ -481,7 +503,10 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => { throw new HttpError(400, 'bad_json', 'Body must be JSON'); });
     if (body.action === 'verify') return json(200, await verify(caller));
     if (!TARGETS.includes(body.target)) throw new HttpError(400, 'bad_target', 'target must be staging or production');
+    // @test-only:start
     const fault = TEST_FAULTS ? req.headers.get('x-gear-test-fault') : null;
+    // @test-only:end
+    // @deploy: const fault: string | null = null;
     switch (body.action) {
       case 'publish': return json(200, await publish(caller, body, fault));
       case 'rollback': return json(200, await publish(caller, { ...body, rollbackOf: body.publicationId }, fault));

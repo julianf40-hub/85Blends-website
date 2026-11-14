@@ -1,0 +1,12 @@
+{
+  "description": "Recommended Gear admin deployment package (D10 option 2). Built by tools/build-deploy-package.mjs.",
+  "files": {
+    "functions.toml": "ab4c01b14529266107a887e6031d09ba8bc9646000e8480d109bc6df23c3240c",
+    "functions/_shared/diff.mjs": "e4734630b340b05e73661023ec014273e44b7570765c4d6d5636ef22daac4352",
+    "functions/_shared/validator.mjs": "fe880cd20685124f2ba0051bea31028308d81f9c88d662306067029b0aff46a6",
+    "functions/gear-catalog/index.ts": "431915802a55d53db4284c749d0cad4d68e04b47e0ab73f26fe14e5aa17efa5e",
+    "functions/gear-publish/index.ts": "ce9a55cc9261e50f8847f18966f3557acd519b4cbb60892395a1cdcd0882b303",
+    "migrations/20261114130000_recommended_gear_admin.sql": "212c206b9cce64f969964e6319060dd68a7fcd8796804bdfb1f60005216b2115",
+    "README.md": "890630a67f3faef9f22ba29ad854acbfd51bc26d5420b2b631c37094f3ab17fc"
+  }
+}

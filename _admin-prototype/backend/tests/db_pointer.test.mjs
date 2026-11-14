@@ -6,7 +6,7 @@ import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { USERS } from '../tools/make-seed.mjs';
-import { ENV, draftRow, fn, head, http, mfa, review, resetLocalDatabase, saveDraft, serviceWrite, signIn, sleep, sql, svc } from './helpers.mjs';
+import { ENV, draftRow, fn, head, http, mfa, review, resetLocalDatabase, saveDraft, serviceWrite, signIn, sleep, sql, svc , needsFaults } from './helpers.mjs';
 import { ClientModel } from './client-model.mjs';
 
 let publisher;
@@ -120,7 +120,7 @@ test('concurrency: five publishers race from the same reviewed state; exactly on
   assert.equal((await catalog('staging')).revision, ok[0].data.revision);
 });
 
-test('stale writer: A validated and prepared, then delayed; B commits; A cannot replace the newer head (enforced in the database)', async () => {
+test('stale writer: A validated and prepared, then delayed; B commits; A cannot replace the newer head (enforced in the database)', { skip: needsFaults }, async () => {
   await edit('stale A/B');
   const aBody = await reviewed('staging');
   const before = count('staging');
@@ -151,7 +151,7 @@ async function abandoned(body, pauseMs, abortAfter) {
 }
 const committedBy = (op) => sql(`select coalesce(publication_id::text, '') from private.gear_publish_intents where operation_id = '${op}'`);
 
-test('a client that gives up proves nothing: measured whether the server still committed; a retry yields exactly one publication either way', async () => {
+test('a client that gives up proves nothing: measured whether the server still committed; a retry yields exactly one publication either way', { skip: needsFaults }, async () => {
   await edit('abandoned, no competitor');
   const body = await reviewed('staging');
   const before = count('staging');
@@ -165,7 +165,7 @@ test('a client that gives up proves nothing: measured whether the server still c
   assert.equal(count('staging'), before + 1);
 });
 
-test('stale writer whose client gave up: whatever the server does, the database refuses it after a newer commit', async () => {
+test('stale writer whose client gave up: whatever the server does, the database refuses it after a newer commit', { skip: needsFaults }, async () => {
   await edit('abandoned A');
   const aBody = await reviewed('staging');
   await abandoned(aBody, 4000, 1000); // the client times out; this proves nothing about the server
@@ -191,7 +191,7 @@ test('duplicate requests: the same operation sent five times at once creates exa
   assert.equal(count('staging'), before + 1);
 });
 
-test('lost response: the commit succeeded but the response was lost; a retry returns the original, never a second publication', async () => {
+test('lost response: the commit succeeded but the response was lost; a retry returns the original, never a second publication', { skip: needsFaults }, async () => {
   await edit('lost response');
   const body = await reviewed('staging');
   const before = count('staging');
@@ -209,7 +209,7 @@ test('lost response: the commit succeeded but the response was lost; a retry ret
   assert.equal(reused.status, 409); assert.equal(reused.data.error, 'operation_conflict');
 });
 
-test('a retry while the original request may still be in flight: one publication, both answers name it', async () => {
+test('a retry while the original request may still be in flight: one publication, both answers name it', { skip: needsFaults }, async () => {
   await edit('abort then retry');
   const body = await reviewed('staging');
   const before = count('staging');
@@ -249,7 +249,7 @@ test('rollback: a new revision with a newer publishedAt and the old content; rev
 });
 
 // ---------------------------------------------------------------- binding enforced by the database
-test('a draft saved between validation and commit is refused by the database (draft_changed), nothing committed', async () => {
+test('a draft saved between validation and commit is refused by the database (draft_changed), nothing committed', { skip: needsFaults }, async () => {
   await edit('bound draft');
   const body = await reviewed('staging');
   const before = count('staging');
@@ -305,9 +305,13 @@ test('the old mutable Storage path is not a publication channel: no client can w
   const write = await http('/storage/v1/object/recommended-gear/staging/catalog-v1.json', { method: 'POST', token: publisher, raw: true, body: '{"x":1}',
     headers: { 'Content-Type': 'application/json', 'x-upsert': 'true' } });
   assert.ok(write.status >= 400, `publisher wrote the legacy object: ${write.status}`);
-  // A key holder can still write it (service keys bypass RLS), but nothing reads it as the catalog.
+  // The bucket accepts images only, so even a key holder's ordinary JSON upload is refused.
   const foreign = JSON.parse(before.body); foreign.revision = randomUUID(); foreign.publishedAt += 9999; foreign.brands = [];
-  assert.equal((await serviceWrite('staging', JSON.stringify(foreign))).status, 200);
+  assert.equal((await serviceWrite('staging', JSON.stringify(foreign))).status, 400, 'JSON is not an allowed type');
+  // A key holder can still force bytes there (mislabelled as an image), but nothing reads it as the catalog.
+  const forced = await http('/storage/v1/object/recommended-gear/staging/catalog-v1.json', { method: 'POST', key: ENV.SERVICE_ROLE_KEY, token: ENV.SERVICE_ROLE_KEY,
+    raw: true, body: JSON.stringify(foreign), headers: { 'Content-Type': 'image/png', 'x-upsert': 'true' } });
+  assert.equal(forced.status, 200, JSON.stringify(forced.data));
   const after = await catalog('staging');
   assert.ok(after.body.equals(before.body), 'endpoint still serves the database pointer');
   const v = await fn(publisher, { action: 'verify' });

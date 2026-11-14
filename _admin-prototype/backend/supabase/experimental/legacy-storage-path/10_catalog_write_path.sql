@@ -17,3 +17,5 @@ begin
     execute format('grant execute on function %s to service_role', f.sig);
   end loop;
 end $$;
+-- The superseded path wrote JSON catalogs into the bucket.
+update storage.buckets set allowed_mime_types = array['application/json', 'image/png', 'image/jpeg'] where id = 'recommended-gear';

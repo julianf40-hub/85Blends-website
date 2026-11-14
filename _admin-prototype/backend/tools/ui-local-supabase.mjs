@@ -76,6 +76,10 @@ async function editField(page, rel, value) {
   await page.click('[data-action=save]');
   return toastText(page, /Draft saved · version \d+/);
 }
+// D11: Staging is public; the publisher confirms the draft is fictional or approved for public viewing.
+async function confirmPublic(page) {
+  if (!(await page.isChecked('[data-action=staging-public-ok]'))) await page.check('[data-action=staging-public-ok]');
+}
 async function runChecks(page, target) {
   await tab(page, 'publish');
   await page.click(`[data-action=review][data-target=${target}]`);
@@ -153,7 +157,7 @@ try {
   await step('reviewed-change binding: a draft saved after the review is refused', async () => {
     await runChecks(A, 'staging');
     await editField(Bp, 'tagline', 'Editor change after the publisher reviewed');
-    await A.click('[data-action=publish][data-target=staging]');
+    await confirmPublic(A); await A.click('[data-action=publish][data-target=staging]');
     assert.match(await toastText(A, /draft is now version 3/), /you reviewed version 2/);
     assert.equal(sql(`select count(*) from public.gear_catalog_publications`), '0');
   });
@@ -165,7 +169,7 @@ try {
       if (body.action !== 'publish') return route.continue();
       return route.continue({ postData: JSON.stringify({ ...body, reviewDigest: '0'.repeat(64) }) });
     });
-    await A.click('[data-action=publish][data-target=staging]');
+    await confirmPublic(A); await A.click('[data-action=publish][data-target=staging]');
     await toastText(A, /differs from what you reviewed/);
     await A.unroute('**/functions/v1/gear-publish');
     assert.equal(sql(`select count(*) from public.gear_catalog_publications`), '0');
@@ -174,9 +178,12 @@ try {
   await step('staging publish: one database commit; the endpoint serves it', async () => {
     await A.reload(); await A.waitForSelector('#brand-list li');
     await runChecks(A, 'staging');
-    await A.click('[data-action=publish][data-target=staging]');
+    assert.equal(await A.isDisabled('[data-action=publish][data-target=staging]'), true, 'disabled until the public-content confirmation');
+    await confirmPublic(A); await A.click('[data-action=publish][data-target=staging]');
     await A.waitForSelector('[data-testid=result-staging]', { timeout: 20000 });
     assert.match(await A.textContent('[data-testid=result-staging]'), /committed/);
+    assert.match(await A.textContent('[data-testid=staging-public]'), /PUBLIC/);
+    assert.match(await A.textContent('[data-testid=staging-public-note]'), /Staging is public/);
     assert.equal(sql(`select status from public.gear_publication_status order by id desc limit 1`), 'committed');
     const served = await fetch(`${ENV.API_URL}/functions/v1/gear-catalog/staging`);
     assert.equal(served.headers.get('x-gear-revision'), sql(`select revision from public.gear_publication_head where target = 'staging'`));
@@ -220,7 +227,7 @@ try {
       await route.fetch();                                    // the server really processes and commits it
       return route.fulfill({ status: 502, contentType: 'application/json', body: '{"error":"bad_gateway","message":"upstream response lost"}' });
     });
-    await A.click('[data-action=publish][data-target=staging]');
+    await confirmPublic(A); await A.click('[data-action=publish][data-target=staging]');
     await A.waitForSelector('[data-testid=unknown-staging]', { timeout: 20000 });
     await A.unroute('**/functions/v1/gear-publish');
     assert.equal(Number(sql(`select count(*) from public.gear_catalog_publications where target = 'staging'`)), before + 1, 'it was committed');
@@ -256,7 +263,10 @@ try {
     at('legacy object: key-holder write');
     const served = await (await fetch(`${ENV.API_URL}/functions/v1/gear-catalog/staging`)).text();
     const foreign = JSON.parse(served); foreign.revision = crypto.randomUUID(); foreign.publishedAt += 9999; foreign.brands = [];
-    assert.equal((await serviceWrite('staging', JSON.stringify(foreign))).status, 200);
+    assert.equal((await serviceWrite('staging', JSON.stringify(foreign))).status, 400, 'the bucket refuses JSON');
+    const forced = await fetch(`${ENV.API_URL}/storage/v1/object/recommended-gear/staging/catalog-v1.json`, { method: 'POST', body: JSON.stringify(foreign),
+      headers: { apikey: ENV.SERVICE_ROLE_KEY, Authorization: `Bearer ${ENV.SERVICE_ROLE_KEY}`, 'Content-Type': 'image/png', 'x-upsert': 'true' } });
+    assert.equal(forced.status, 200, 'a key holder can still force bytes there (mislabelled)');
     assert.equal(await (await fetch(`${ENV.API_URL}/functions/v1/gear-catalog/staging`)).text(), served, 'apps still receive the database publication');
     await A.reload(); await A.waitForSelector('#brand-list li');
     await tab(A, 'publish');

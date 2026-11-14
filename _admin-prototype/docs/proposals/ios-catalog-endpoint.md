@@ -1,6 +1,47 @@
 # Proposal: read Recommended Gear from the gear-catalog endpoint (iOS; future Android)
 
-Status: **proposal only.** Nothing in `E85-Blends-App` has been changed. This follows decision D10,
+Status: **prepared, not yet natively tested, not pushed.**
+- The change is one commit on an isolated local branch, `feature/gear-catalog-endpoint`, on
+  `origin/main` `e6c42ed`. It is saved here as `ios-gear-catalog-endpoint.patch`. Nothing in
+  `E85-Blends-App` on GitHub has been changed.
+- **Why it isn't pushed:** that repo's `CLAUDE.md` says Xcode Cloud start conditions live in App
+  Store Connect, so a branch push could start a build, and Xcode Cloud builds are not to be
+  started.
+- **Why it hasn't run:** the native tests need a Mac with Xcode. None was attached to the session
+  that prepared them. The JavaScript model in `backend/tests/client-model.mjs` is **not** native
+  validation.
+
+To apply and run on a Mac, in a clean checkout of `E85-Blends-App` at `main`. The live project
+ref in the existing test literals is replaced by `<project-ref>` in the saved patch; this restores
+it from the checkout:
+
+```sh
+git checkout -b feature/gear-catalog-endpoint origin/main
+REF=$(grep -o 'https://[a-z0-9]*\.supabase\.co/rest/v1/' EightyFiveBlends.xcodeproj/EightyFiveBlendsTests/GearCatalogTests.swift | head -1 | cut -d/ -f3 | cut -d. -f1)
+sed "s/<project-ref>/$REF/g" <path>/ios-gear-catalog-endpoint.patch | git am
+xcodebuild test -project EightyFiveBlends.xcodeproj -scheme EightyFiveBlends \
+  -destination 'platform=iOS Simulator,name=iPhone 16' \
+  -only-testing:EightyFiveBlendsTests/GearCatalogEndpointTests \
+  -only-testing:EightyFiveBlendsTests/GearCatalogTests \
+  -only-testing:EightyFiveBlendsTests/GearCatalogSourceTests
+```
+
+Round-trip verified: restoring the ref and applying onto `e6c42ed` gives a tree identical to the
+prepared commit.
+
+The native tests in `GearCatalogEndpointTests.swift` drive the real `GearCatalogStore` with an
+injected fetch:
+- URL construction for both sources and all four `SUPABASE_URL` shapes; no source still points
+  at Storage;
+- a catalog accepted from the old Storage path is shown after the update and revalidated against
+  the endpoint (old ETag sent, same bytes → unchanged, new ETag kept, then 304);
+- ordering state survives the update;
+- a gateway-weakened `W/"…"` ETag is sent back as received, and 304 keeps the content;
+- no credentials are sent;
+- a delayed older publication is rejected, and the rejected response does not replace the ETag;
+  a rollback is accepted;
+- 404 and 503 never clear a published catalog (also after relaunch), and Production keeps its
+  bundled content before the first publication. This follows decision D10,
 option 2: the database is the publication channel, and apps read the current publication through a
 read-only endpoint. Source inspected: `julianf40-hub/E85-Blends-App@e6c42ed`,
 `EightyFiveBlends/GearCatalog.swift`.

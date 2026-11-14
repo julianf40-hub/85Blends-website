@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 function files(dir, out = []) {
   for (const name of readdirSync(dir)) {
-    if (name === '.local-state' || name === 'node_modules' || name === 'images') continue;
+    if (name === '.local-state' || name === 'node_modules' || name === 'images' || name === '.deploy-check' || name === '.deploy-check-results') continue; // local, gitignored outputs
     const path = join(dir, name);
     if (statSync(path).isDirectory()) files(path, out);
     else if (/\.(m?js|html|css|json|py)$/.test(name)) out.push(path);

@@ -638,17 +638,23 @@ function targetPanel(target) {
     [!!review && review.errors.length === 0, 'Server validation, image and approval checks pass'],
     [mfa, supa() ? 'Signed in with TOTP (aal2)' : 'Simulated MFA (aal2)'],
     [isPublisher, supa() ? 'Publisher role (server-side gear_admins; the only role that may publish)' : 'Simulated publisher role (the only role that may publish)'],
-    [storageOK || storage.state === 'pending', 'Storage matches the latest recorded publication (re-checked under the lock)'],
+    [storageOK || storage.state === 'pending', supa() ? 'The current publication is in place (the database pointer; re-checked at commit)' : 'Storage matches the latest recorded publication (re-checked under the lock)'],
   ];
+  if (!production) {
+    // D11: Staging is public. This confirmation is a UI checkpoint for the publisher, not a server control.
+    requirements.push([!!S.stagingPublicOK, 'Everything in this draft is fictional or explicitly approved for public viewing (Staging is public)']);
+  }
   if (production) {
     requirements.push([S.acknowledged, 'I reviewed the before/after summary (single-person approval)']);
     requirements.push([S.confirmText === S.session.productionConfirmation, `Typed ${S.session.productionConfirmation}`]);
   }
   const ready = requirements.every(([ok]) => ok);
   return `<section class="target ${target}" aria-labelledby="t-${target}">
-    <h3 id="t-${target}">${production ? 'Production' : 'Staging'} <span class="target-path">recommended-gear/${production ? '' : 'staging/'}catalog-v1.json</span></h3>
+    <h3 id="t-${target}">${production ? 'Production' : 'Staging'} ${production ? '' : '<span class="chip public-chip" data-testid="staging-public">PUBLIC</span>'} <span class="target-path">${supa() ? `functions/v1/gear-catalog/${target}` : `recommended-gear/${production ? '' : 'staging/'}catalog-v1.json`}</span></h3>
+    ${production ? '' : `<p class="info warn small" data-testid="staging-public-note"><strong>Staging is public.</strong> Anyone with the URL can read it, with no sign-in (decision D11). Publish only fictional content or content explicitly approved for public viewing. Partner approval for Production is a separate requirement and is still checked there.</p>
+      <label class="switch"><input type="checkbox" data-action="staging-public-ok" ${S.stagingPublicOK ? 'checked' : ''}> This draft contains only fictional or approved-for-public content</label>`}
     <p class="small">${production ? 'Read by <strong>iOS builds that include remote Recommended Gear</strong> (the 2.4.1 code on the iOS main branch; App Store availability not verified here), within about 2 minutes. <strong>Android does not read this catalog yet.</strong> Withdrawing content needs another publication; deleting the file does not clear devices.'
-      : 'Read only by iOS TestFlight, Xcode and Debug installs with <strong>Staging</strong> selected. Never by App Store installs. Not read by Android. Partner-approval gate skipped.'}</p>
+      : 'The iOS app shows it only in TestFlight, Xcode and Debug installs with <strong>Staging</strong> selected (never App Store installs; not read by Android), but the endpoint itself is public. The partner-approval gate is not applied here.'}</p>
     <dl class="kv">
       <dt>Live revision</dt><dd>${live.head ? `<code>${e(live.head.revision)}</code>` : 'nothing published'}</dd>
       <dt>Published</dt><dd>${live.head ? e(formatTime(live.head.publishedAt)) : '—'}</dd>
@@ -790,6 +796,7 @@ async function saveDraft() {
     if (!editedSince) S.working = { catalog: clone(draft.catalog), meta: clone(draft.meta) };
     S.reviews = {};
     S.acknowledged = false;
+    S.stagingPublicOK = false; // re-confirm for each saved version or publication
     S.confirmText = '';
     S.saving = false;
     toast(editedSince ? `Draft saved · version ${draft.version}. Edits made while saving are kept and not yet saved.` : `Draft saved · version ${draft.version}`);
@@ -872,6 +879,7 @@ async function publish(target, retryBody = null) {
     S.results[target] = result;
     S.reviews = {};
     S.acknowledged = false;
+    S.stagingPublicOK = false; // re-confirm for each saved version or publication
     S.confirmText = '';
     toast(`${supa() ? 'Local' : 'Simulated'} ${target} publication: ${result.summary}`);
     await loadState();
@@ -1142,6 +1150,7 @@ document.addEventListener('change', (event) => {
     case 'changes-target': S.changesTarget = el.value; return renderSide();
     case 'history-target': S.historyTarget = el.value; return renderSide();
     case 'ack': S.acknowledged = el.checked; return renderSide();
+    case 'staging-public-ok': S.stagingPublicOK = el.checked; return renderSide();
     default:
   }
 });

@@ -379,6 +379,49 @@ newer publication can be served an older complete one by a cache for at most `ma
 **The old-design demonstrations stay reproducible** in `backend/tests/legacy-storage/`
 (54/54, including the PS1b and PS2 hazards asserted without the guard).
 
+**Operation IDs are bound to the publisher, the environment and the request content.**
+- gear-publish fingerprints each request (target, action, review digest, draft version, expected
+  head, rollback source) and stores the fingerprint with the pending intent and, at commit, on
+  the append-only publication (`request_digest`).
+- A retry is recognized from either place and must match the publisher, the target and the
+  fingerprint. Anything else is `operation_conflict`, and nothing about the other request is
+  revealed.
+- The database's commit RPC also refuses another account (`not_your_operation`).
+- Tested (`backend/tests/operations.test.mjs`): a Staging ID reused for Production, pending or
+  committed; four content variants; another publisher account at the database and at the
+  function.
+
+**Pending-operation cleanup without losing replay protection:**
+- `gear_cleanup_operations()` runs hourly (service role, `pg_cron`). It deletes pending intents
+  that expired over an hour ago (they never committed, so a retry just prepares again, bound to
+  the same fingerprint), and committed intents older than 7 days.
+- Replays of committed operations are answered from `gear_catalog_publications.operation_id`
+  and `request_digest`, which are append-only. So cleanup cannot enable a second publication or
+  a cross-boundary replay. Tested after a cleanup that removed committed intents.
+
+**Deployment package** (`backend/deploy/`):
+- `tools/build-deploy-package.mjs` builds `deploy/package/` from allowlisted sources only:
+  - the squashed migration `20261114130000_recommended_gear_admin.sql` (current design only);
+  - `gear-publish` with every `@test-only` region removed;
+  - `gear-catalog`, the shared modules, `functions.toml` and a SHA-256 manifest.
+- It rejects any forbidden string: fault hooks, the legacy function, experimental fixtures,
+  lease/grant/drift names, `local-only`, key-shaped values.
+- `tests/deploy_package.test.mjs` checks:
+  - the committed package equals a fresh build;
+  - an exact file allowlist;
+  - no forbidden content;
+  - unbalanced markers are refused;
+  - the migration has only current-design objects.
+- `tools/check-deploy-package.sh` starts a separate local stack from the package alone (no legacy
+  function, no test-fault switch). It runs the current-design tests against it (34 pass, 6
+  fault-dependent tests skip, 0 fail), including package-only checks: fault headers are inert,
+  and the superseded functions, RPCs, columns, policies and triggers do not exist.
+- It also compares the package schema with the development history
+  (`deploy/schema-comparison.md`): **no unexpected differences**.
+- The comparison found two real gaps, both fixed: a missing `UNIQUE (target, published_at)`, and
+  a bucket that still accepted JSON. The bucket is now images-only, so the old catalog path
+  cannot be written by ordinary uploads.
+
 **App impact:**
 - **iOS:** the smallest change is the two paths in `GearCatalogSource.objectPath` plus their test
   literals. Installed builds that read the Storage paths keep bundled or last-accepted content
@@ -667,8 +710,10 @@ creates, changes or uses a live credential.
 3. The migration reviewed in `E85-Blends-App`, passing tier B, then applied to the live project. It
    should be a **squashed** migration containing only the §6.2 design. The local history keeps the
    superseded Storage-path steps (and drops their policies and grants in `20261114100000`), but
-   the live project never needs them. Exclude `supabase/experimental/` and
-   `gear-legacy-storage-demo` from deployment.
+   the live project never needs them. That migration is
+   `backend/deploy/package/migrations/20261114130000_recommended_gear_admin.sql`, built and
+   checked as above. Exclude `supabase/experimental/` and `gear-legacy-storage-demo` from
+   deployment (enforced by the package build).
 4. Real Auth: TOTP enrolled for Julian, dashboard MFA on, sign-ups confirmed off.
 5. Function code reviewed across the whole project, plus a CI check that only `gear-*` references
    `recommended-gear` (§5).
@@ -692,22 +737,25 @@ creates, changes or uses a live credential.
 | D1 | Alert delivery for the verifier and incidents | Email, push, or another channel | Production launch |
 | D2 | Far-future incident recovery | Restore the previous bytes, a forward-stamped correction, or an app change capping accepted skew (default stays block and report) | Production launch |
 | D3 | Admin URL and deploy method | `<project>.pages.dev` with Access (no DNS change) vs a custom hostname (DNS change); Cloudflare Git integration vs a direct upload with a Pages-only token | Hosting the frontend |
-| D4 | Hosted non-production environment for tier B's hosted-only checks | Free-plan project vs a Pro branch | Backend staging, hosted part |
+| D4 | Hosted non-production environment for tier B's hosted-only checks | **Recommended:** a new Free-plan project in a separate organization ($0/month; pauses after 1 week idle). Steps in `docs/proposals/hosted-nonprod-environment.md`. Not created | Backend staging, hosted part |
 | D5 | Production step-up window and JWT lifetime | Proposed 900 s step-up and a short access-token expiry (revocation is function-only, §4). Measured locally: PostgREST accepts an expired JWT for about 30 s after `exp` (refused from +32 s), and a revoked but unexpired JWT until then | Production launch |
 | D6 | HEIF uploads | Stay disabled until a server-side decoder and dimension checks exist | Optional |
 | D7 | Future-timestamp warning in `validate_catalog.py` | Separate iOS tooling PR (`docs/proposals/validator-future-timestamp.md`) | Optional |
 | D8 | Signed catalogs: authenticate content against key holders and tampering. Does **not** prevent an older valid signed publication from overwriting a newer one (needs D10) | App change on iOS (and Android when enabled) | Optional, long term |
 | D10 | Commit ordering for catalog writes (§6.1 blocker) | **Decided 2026-11-14: option 2**, the database pointer plus the read endpoint (§6.2). The trigger is experimental evidence only | Done (local) |
-| D11 | Staging catalog visibility | The endpoint serves Staging without credentials, as the public Storage object did; the app limits it to TestFlight/Xcode/Debug. Staging may hold content not yet partner-approved. Alternative: require a tester token | Before the first Staging publication on a hosted project |
+| D11 | Staging catalog visibility | **Decided 2026-11-14:** Staging stays public. It may hold only fictional content or content explicitly approved for public viewing. The admin UI labels it PUBLIC and requires the publisher to confirm before each Staging publish (a UI checkpoint, not a server control). Production partner approval stays a separate requirement. No embedded tester token | Done |
 | D9 | Retention of unreferenced images | e.g. report after 30 days, delete manually | Before image uploads ship |
 
 ## 14. Verification in this session
 
 ### Backend branch (local stack, fictional data)
 
-- **D10 option 2 (current design):** `node --test --test-concurrency=1 backend/tests/*.test.mjs`
-  → **34 / 34**: the database pointer (re-run scenarios, §6.2), foundation, review binding, images,
-  origin. The browser run (60 s tokens) → **19 / 19**.
+- **Review round (2026-11-14), current design:** `node --test --test-concurrency=1 backend/tests/*.test.mjs`
+  → **44 pass, 0 fail, 2 skipped** (the 2 are package-only checks): database pointer, operations,
+  foundation, review and images, deployment package (static).
+- `backend/tools/check-deploy-package.sh` → the package stack **34 pass, 6 skipped
+  (fault-dependent), 0 fail**; schema comparison: no unexpected differences.
+- Earlier the same day: **D10 option 2:** 34 / 34; browser run (60 s tokens) **19 / 19**.
 - **Superseded Storage path (evidence):** `backend/tests/legacy-storage/*.test.mjs` → **54 / 54**.
   This includes the PS1b and PS2 hazards, asserted without the guard.
 

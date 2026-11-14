@@ -13,8 +13,11 @@ Requires Docker and the Supabase CLI (tested with 2.117.0).
 ```sh
 cd _admin-prototype/backend
 tools/start-local.sh            # starts the stack; hands gear-publish the local sb_secret_ key via env
-node --test --test-concurrency=1 tests/*.test.mjs                 # current design (D10 option 2); resets the DB; ~4 min
-node --test --test-concurrency=1 tests/legacy-storage/*.test.mjs  # superseded Storage path, evidence only; ~6 min
+# CURRENT DESIGN (what is proposed for deployment)
+node --test --test-concurrency=1 tests/*.test.mjs                 # resets the DB; ~6 min
+tools/check-deploy-package.sh                                     # the deployment package on its own stack; ~8 min
+# LEGACY FAILURE DEMONSTRATIONS (superseded Storage path; evidence only, never deployed)
+node --test --test-concurrency=1 tests/legacy-storage/*.test.mjs  # ~6 min
 GEAR_LOCAL_JWT_EXPIRY=60 tools/start-local.sh && GEAR_LOCAL_JWT_EXPIRY=60 node tools/ui-local-supabase.mjs [shots-dir]
 tools/serve-ui.sh               # or use the UI yourself: http://127.0.0.1:4174 (local-supabase mode)
 supabase stop
@@ -56,8 +59,26 @@ Plan §6.2 has the full description and the re-run scenario table.
 - **Not a channel any more:** the Storage catalog objects. Their write policies and every
   Storage-path RPC are revoked (`migrations/20261114100000_gear_db_pointer.sql`).
 - **Images:** unchanged; still immutable Storage objects.
-- **Tests:** `tests/db_pointer.test.mjs` (scenarios, read endpoint, cache, client model, no second
-  channel), `tests/foundation.test.mjs`, `tests/review_images.test.mjs`.
+- **Operation IDs:**
+  - bound to the publisher, the environment and the request fingerprint (target, action, review
+    digest, draft version, expected head, rollback source);
+  - stored on the intent and on the append-only publication;
+  - a mismatched retry is `operation_conflict`;
+  - `gear_cleanup_operations()` deletes expired pending intents and old committed intents.
+    Committed replays are still recognized from the publications.
+- **Deployment package:** `deploy/package/` (see `deploy/README.md`).
+  - Built by `tools/build-deploy-package.mjs`, with test-only code removed and an allowlist plus
+    forbidden-content check.
+  - Checked statically by `tests/deploy_package.test.mjs`, and at runtime by
+    `tools/check-deploy-package.sh`, which also writes `deploy/schema-comparison.md`.
+- **Tests:**
+  - current design: `tests/db_pointer.test.mjs` (scenarios, read endpoint, cache, client model,
+    no second channel), `tests/operations.test.mjs`, `tests/foundation.test.mjs`,
+    `tests/review_images.test.mjs`, `tests/deploy_package.test.mjs`,
+    `tests/package_mode.test.mjs` (package stack only);
+  - legacy failure demonstrations: `tests/legacy-storage/` only.
+- **Staging is public (D11):** fictional or approved-for-public content only, labelled in the
+  admin UI. Production partner approval is separate.
 - **Client model:** `tests/client-model.mjs` is a line-referenced model of the iOS `accept` rule.
 - **iOS and Android:** `../docs/proposals/ios-catalog-endpoint.md`.
 
@@ -223,7 +244,21 @@ The final version decides on the proposed row in the INSERT phase of the upsert.
 
 ## Local validation
 
-**Current design (D10 option 2), 2026-11-14:**
+**Review round (current design), 2026-11-14:**
+- `tests/*.test.mjs` → **44 pass, 0 fail, 2 skipped**. The 2 skipped are `package_mode` checks,
+  which run only against the package stack. The suites:
+  - database pointer (18);
+  - operations: binding and cleanup (4);
+  - foundation (9);
+  - review and images (7);
+  - deployment package, static (6).
+- `tools/check-deploy-package.sh` → package stack **34 pass, 6 skipped (they need test-only
+  faults, absent by design), 0 fail**. `deploy/schema-comparison.md`: no unexpected differences.
+- Browser run (60 s tokens) → **19 / 19**, including the D11 PUBLIC label, its note, and the
+  disabled Staging publish until the public-content confirmation.
+- Legacy failure demonstrations `tests/legacy-storage/` → **54 / 54** (unchanged).
+
+**Earlier, D10 option 2 first pass:**
 - `tests/*.test.mjs` → **34 / 34** (18 database-pointer, 9 foundation, 7 review and images).
 - The browser run (60 s tokens) → **19 / 19**, 3 consecutive runs. It replaces reconcile and drift with:
   - a lost response: the server commits, the browser gets a 502, and the UI retries with the

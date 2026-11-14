@@ -38,6 +38,7 @@ async function publishStaging(page) {
   await page.click('[data-action="tab"][data-tab="publish"]');
   await page.click('[data-action="review"][data-target="staging"]');
   await page.waitForSelector('.target.staging .review');
+  await page.check('[data-action="staging-public-ok"]'); // D11: Staging is public; confirm before publishing
   await page.click('[data-action="publish"][data-target="staging"]');
   await page.waitForTimeout(700);
 }

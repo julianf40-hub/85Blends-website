@@ -5,7 +5,12 @@ import { createHmac, randomUUID } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { USERS, LOCAL_TEST_PASSWORD } from '../tools/make-seed.mjs';
 
-export const DIR = new URL('..', import.meta.url).pathname;
+// The Supabase project directory the tests drive: the development history by default, or the
+// deployment-package check stack (tools/check-deploy-package.sh) when GEAR_SUPABASE_WORKDIR is set.
+export const DIR = process.env.GEAR_SUPABASE_WORKDIR ?? new URL('..', import.meta.url).pathname;
+// True when running against the deployment package, whose functions contain no test-only fault hooks.
+export const PACKAGE_MODE = process.env.GEAR_PACKAGE_CHECK === '1';
+export const needsFaults = PACKAGE_MODE && 'needs test-only fault hooks, which the deployment package does not contain (covered by the development build)';
 export const ENV = {};
 export const sh = (cmd) => execSync(cmd, { cwd: DIR, encoding: 'utf8', env: { GEAR_LOCAL_JWT_EXPIRY: '3600', ...process.env, SUPABASE_INTERNAL_IMAGE_REGISTRY: 'docker.io' } }); // config.toml reads the token lifetime from env
 export const sql = (q) => execSync(`psql "${ENV.DB_URL}" -v ON_ERROR_STOP=1 -At`, { input: q, encoding: 'utf8' }).trim();
@@ -103,7 +108,7 @@ export async function grantFor(target, ttl = 30, userId = USERS.publisher.id) {
 export function resetLocalDatabase({ legacyStoragePath = false } = {}) {
   Object.assign(ENV, JSON.parse(sh('supabase status -o json')));
   sh('supabase db reset');
-  sh('node tools/seed-images.mjs');
+  sh(`node ${new URL('../tools/seed-images.mjs', import.meta.url).pathname}`); // fictional images, always from this checkout
   FN.name = 'gear-publish';
   if (legacyStoragePath) {
     // Restores the superseded Storage publication path on the LOCAL stack only (not a migration).

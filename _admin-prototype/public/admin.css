@@ -268,3 +268,4 @@ legend { font-weight: 700; padding: 0 6px; }
 .signin-form label { display: grid; gap: 4px; }
 .account-who { font-size: 13px; }
 .break { word-break: break-all; }
+.public-chip { background: #ffd7d7; color: #6b0000; font-weight: 800; letter-spacing: .06em; }
