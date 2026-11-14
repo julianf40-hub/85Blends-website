@@ -245,9 +245,11 @@ create function public.gear_prepare_intent(p jsonb) returns jsonb
   language plpgsql security definer set search_path = '' as $$
 declare i private.gear_publish_intents;
 begin
-  if exists (select 1 from private.gear_retired_operations r where r.operation_id = (p ->> 'operation_id')::uuid)
-     or exists (select 1 from public.gear_catalog_publications c where c.operation_id = (p ->> 'operation_id')::uuid) then
-    raise exception 'operation_conflict: this operation ID was already used' using errcode = 'PT409';
+  if not exists (select 1 from private.gear_publish_intents w where w.operation_id = (p ->> 'operation_id')::uuid) then
+    if exists (select 1 from private.gear_retired_operations r where r.operation_id = (p ->> 'operation_id')::uuid)
+       or exists (select 1 from public.gear_catalog_publications c where c.operation_id = (p ->> 'operation_id')::uuid) then
+      raise exception 'operation_conflict: this operation ID was already used' using errcode = 'PT409';
+    end if;
   end if;
   insert into private.gear_publish_intents (operation_id, target, user_id, request_digest, revision, published_at, document, digest,
     summary, expected_publication_id, draft_version, rollback_of, validator_version, expires_at)

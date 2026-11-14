@@ -253,7 +253,19 @@ The final version decides on the proposed row in the INSERT phase of the upsert.
 
 ## Local validation
 
-**Review round 2 (local branch `local/admin-backend-hosted-prep`, not pushed), 2026-11-14:**
+**Full run on pushed head `d0c02eb` (`claude/admin-backend-hosted-prep`), 2026-11-14:**
+- `tests/*.test.mjs`, once, on a clean tree: **57 tests: 54 pass, 1 fail, 2 skipped** (package-only).
+- **The failure was a real regression**, introduced in `3b135bd` by the defense-in-depth check in
+  `gear_prepare_intent`. Five simultaneous copies of one operation still produced exactly one
+  publication, but 2 copies got `operation_conflict` instead of the original. The race: a
+  duplicate's lookup ran before the original committed, and its prepare after.
+- Fixed after that run (migration `20261114170000`, a function fallback, and two deterministic race
+  tests). **Targeted re-run only** (`db_pointer` + `operations`): **26 / 26**. The full suite has not
+  been re-run on the fixed head.
+- Browser run, once, with finer phases and a failure snapshot: **19 / 19**. Neither earlier
+  timeout recurred, so both stay **unresolved**.
+
+**Review round 2 (local branch, before push), 2026-11-14:**
 - `tests/*.test.mjs` → 57 tests: 53 pass, 2 skipped (package-only). The 2 failures were tests
   corrected this round: a CORS check that Kong overwrote, and a cleanup expectation changed by the
   tombstone fix. Both re-run: `cors` and `operations` **10 / 10**.

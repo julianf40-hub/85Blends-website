@@ -30,6 +30,24 @@ const step = async (name, run) => {
       const state = await p.evaluate(() => ({ toasts: [...document.querySelectorAll('#toasts .toast')].map((t) => t.textContent), dialog: document.querySelector('#dialog[open]')?.textContent?.replace(/\s+/g, ' ').slice(0, 600) ?? null })).catch(() => null);
       console.log(`     ${who}:`, JSON.stringify(state));
     }
+    // Classifies a timeout: was the save persisted (missed toast) or not (unsuccessful save), and
+    // were the unsaved edits retained? Did the review panel render?
+    const snapshot = await A.evaluate((edit) => ({
+      status: document.querySelector('#draft-status .pill')?.textContent ?? null,
+      draftLabel: document.querySelector('#draft-status .muted')?.textContent ?? null,
+      editorValue: edit ? document.querySelector(`#editor [data-bind="${edit.rel}"]`)?.value ?? null : null,
+      reviewPanels: [...document.querySelectorAll('section.target .review')].map((r) => r.closest('section.target')?.className),
+      tab: document.querySelector('[data-action=tab][aria-selected=true], [data-action=tab].active')?.textContent ?? null,
+    }), lastEdit).catch(() => null);
+    let persisted = null;
+    try {
+      persisted = JSON.parse(sql(`select json_build_object('version', version, 'tagline', catalog -> 'brands' -> 0 ->> 'tagline', 'updated_at', updated_at) from public.gear_catalog_drafts`));
+    } catch { /* database unreachable */ }
+    const classification = !lastEdit ? 'no edit in progress'
+      : persisted?.tagline === lastEdit.value ? 'save PERSISTED (a missed or late toast, or a later wait)'
+      : snapshot?.editorValue === lastEdit.value ? 'save NOT persisted; unsaved edit retained in the editor'
+      : 'save NOT persisted; edit not visible in the editor';
+    console.log(`     snapshot: ${JSON.stringify({ lastEdit, persisted, page: snapshot, classification })}`);
     throw error;
   }
 };
@@ -71,19 +89,30 @@ async function signIn(page, who, knownSecret = null) {
   await page.click('form[data-form=totp] button[type=submit]');
   return { secret, verifiedAt };
 }
+let lastEdit = null; // what the most recent editField typed, for failure snapshots
 async function editField(page, rel, value) {
+  const outer = phase;
+  lastEdit = { rel, value };
+  at(`${outer} › editField: fill + save`);
   await page.fill(`#editor [data-bind="${rel}"]`, value);
   await page.click('[data-action=save]');
-  return toastText(page, /Draft saved · version \d+/);
+  at(`${outer} › editField: wait for the "Draft saved" toast`);
+  const out = await toastText(page, /Draft saved · version \d+/);
+  at(outer);
+  return out;
 }
 // D11: Staging is public; the publisher confirms the draft is fictional or approved for public viewing.
 async function confirmPublic(page) {
   if (!(await page.isChecked('[data-action=staging-public-ok]'))) await page.check('[data-action=staging-public-ok]');
 }
 async function runChecks(page, target) {
+  const outer = phase;
+  at(`${outer} › runChecks(${target}): request review`);
   await tab(page, 'publish');
   await page.click(`[data-action=review][data-target=${target}]`);
+  at(`${outer} › runChecks(${target}): wait for the review panel to render`);
   await page.waitForFunction((t) => /Server checks pass|class="error"/.test(document.querySelector(`section.target.${t}`)?.innerHTML ?? '') && !!document.querySelector(`section.target.${t} .review`), target, { timeout: 15000 });
+  at(outer);
 }
 
 // ---- run --------------------------------------------------------------------------------------------

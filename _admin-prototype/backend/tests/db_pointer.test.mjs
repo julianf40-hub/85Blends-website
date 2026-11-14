@@ -191,6 +191,36 @@ test('duplicate requests: the same operation sent five times at once creates exa
   assert.equal(count('staging'), before + 1);
 });
 
+test('a duplicate whose lookup ran before the original committed still gets the original (race found on d0c02eb)', { skip: needsFaults }, async () => {
+  await edit('prepare race');
+  const body = await reviewed('staging');
+  const before = count('staging');
+  // The duplicate looks the operation up (nothing yet), then is held before it prepares; the original commits meanwhile.
+  const dup = send(body, { 'x-gear-test-fault': 'pause_after_lookup:2500' });
+  await sleep(600);
+  const original = await send(body);
+  const late = await dup;
+  evidence('prepare-race', { original: [original.status, original.data.replayed], duplicate: [late.status, late.data.replayed ?? late.data.error] });
+  assert.equal(original.status, 200); assert.equal(original.data.replayed, false);
+  assert.equal(late.status, 200, JSON.stringify(late.data)); assert.equal(late.data.replayed, true);
+  assert.equal(late.data.revision, original.data.revision);
+  assert.equal(count('staging'), before + 1);
+});
+
+test('the same race when the committed intent was already cleaned up: the function re-reads the operation and replays it', { skip: needsFaults }, async () => {
+  await edit('prepare race after cleanup');
+  const body = await reviewed('staging');
+  const before = count('staging');
+  const dup = send(body, { 'x-gear-test-fault': 'pause_after_lookup:3000' });
+  await sleep(600);
+  const original = await send(body);
+  sql(`delete from private.gear_publish_intents where operation_id = '${body.operationId}'`); // as cleanup would, later
+  const late = await dup;
+  assert.equal(late.status, 200, JSON.stringify(late.data)); assert.equal(late.data.replayed, true);
+  assert.equal(late.data.revision, original.data.revision);
+  assert.equal(count('staging'), before + 1);
+});
+
 test('lost response: the commit succeeded but the response was lost; a retry returns the original, never a second publication', { skip: needsFaults }, async () => {
   await edit('lost response');
   const body = await reviewed('staging');

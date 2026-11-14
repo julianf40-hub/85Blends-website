@@ -477,12 +477,25 @@ async function publish(caller: Caller, body: any, fault: string | null) {
     throw error;
   }
 
-  const intent = await rpc('gear_prepare_intent', { p: {
+  // @test-only:start
+  await pause(fault, 'after_lookup'); // local tests: a duplicate delayed between its lookup and its prepare
+  // @test-only:end
+  let intent: any;
+  try {
+    intent = await rpc('gear_prepare_intent', { p: {
     operation_id: operationId, target, user_id: caller.id, request_digest: fingerprint, revision: document.revision,
     published_at: document.publishedAt, document: new TextDecoder().decode(bytes), digest: await sha256(bytes),
     summary: summarize(diffCatalogs(r.baselineDoc, document)), expected_publication_id: r.current?.id ?? null,
     draft_version: r.draftVersion, rollback_of: r.rollbackOf, validator_version: VALIDATOR_VERSION,
-  } });
+    } });
+  } catch (error) {
+    // The operation was committed (or retired) after this request's lookup: answer as a retry would.
+    if (!(error instanceof HttpError) || error.code !== 'operation_conflict') throw error;
+    const now = await rpc('gear_find_operation', { p_operation_id: operationId });
+    if (!now || !sameRequest(now)) throw new HttpError(409, 'operation_conflict', 'This operation ID belongs to a different request');
+    if (now.state === 'committed') return { ...(await rpc('gear_operation_result', { p_operation_id: operationId })), storage: 'committed' };
+    throw new HttpError(409, 'operation_expired', 'This operation expired without being published; review again (a new operation ID)');
+  }
   // A concurrent duplicate may have prepared this operation first: use its intent, if it is the same request.
   if (!intent.created && !sameRequest(intent)) throw new HttpError(409, 'operation_conflict', 'This operation ID belongs to a different request');
   // @test-only:start
