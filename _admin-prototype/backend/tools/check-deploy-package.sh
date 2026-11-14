@@ -37,7 +37,7 @@ supabase stop >/dev/null 2>&1 || true
   supabase stop >/dev/null && supabase start >/dev/null )
 set +e
 GEAR_PACKAGE_CHECK=1 GEAR_SUPABASE_WORKDIR="$W" node --test --test-concurrency=1 \
-  tests/foundation.test.mjs tests/review_images.test.mjs tests/db_pointer.test.mjs tests/operations.test.mjs tests/package_mode.test.mjs > "$OUT/package-tests.tap" 2>&1
+  tests/foundation.test.mjs tests/review_images.test.mjs tests/db_pointer.test.mjs tests/operations.test.mjs tests/replay_boundaries.test.mjs tests/package_mode.test.mjs > "$OUT/package-tests.tap" 2>&1
 STATUS=$?
 set -e
 ( cd "$W" && supabase db reset >/dev/null 2>&1 ) && node tools/schema-inventory.mjs "$W" > "$OUT/inventory-package.json"

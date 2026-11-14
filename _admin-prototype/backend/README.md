@@ -77,7 +77,10 @@ Plan §6.2 has the full description and the re-run scenario table.
   - current design: `tests/db_pointer.test.mjs` (scenarios, read endpoint, cache, client model,
     no second channel), `tests/operations.test.mjs`, `tests/foundation.test.mjs`,
     `tests/review_images.test.mjs`, `tests/deploy_package.test.mjs`,
-    `tests/package_mode.test.mjs` (package stack only);
+    `tests/replay_boundaries.test.mjs`, `tests/package_mode.test.mjs` (package stack only);
+  - the package stack (`tools/check-deploy-package.sh`) runs foundation, review_images,
+    db_pointer, operations, replay_boundaries and package_mode. Tests that need a test-only fault
+    hook skip there (`needsFaults`);
   - legacy failure demonstrations: `tests/legacy-storage/` only.
 - **Images:** in their own bucket, `recommended-gear-images`. The existing `recommended-gear`
   bucket is never altered (`deploy/ROLLOUT.md`: fresh vs existing project).
@@ -252,6 +255,28 @@ The final version decides on the proposed row in the INSERT phase of the upsert.
 | The publication row's `auth_aal` / `auth_amr` / `published_by` | **No / partly**: evidence written by the function. The trigger checks the supplied values but cannot verify them. The Storage write is the independently verified step |
 
 ## Local validation
+
+**Replay boundaries in the package stack (affected checks only; NOT a full run):**
+- `tools/check-deploy-package.sh` now also runs `tests/replay_boundaries.test.mjs`. No hook was
+  added to the package.
+- **Runs against the package** (it needs only the service-role RPCs gear-publish itself calls,
+  and the real `gear_cleanup_operations`):
+  - **publisher boundary after cleanup.** The intent is now removed by the real cleanup instead
+    of a direct delete. It also checks that the lookup keeps the original environment and that
+    Production can't be bound to the committed ID either;
+  - **new: the database half of the intent-present path.** `gear_prepare_intent` with a committed
+    ID, for Production, another fingerprint or another account, returns the original intent
+    unchanged (`created: false`) and publishes nothing. gear-publish's
+    `!intent.created && !sameRequest(intent)` check relies on that answer.
+- **Development-only: the four races** (environment and fingerprint, each with the intent present
+  and after cleanup). Each needs a request's lookup to run before the original commits. Only the
+  test-only `pause_after_lookup` hook makes that deterministic. Without it, the function code they
+  reach (the prepare fallback, and the post-prepare `sameRequest` check) runs only under real
+  concurrency, and a package-only stress test could not show which path ran.
+- **Already covered on the package without races** (`tests/operations.test.mjs`):
+  - the same environment, fingerprint and publisher boundaries when requests arrive in order,
+    before and after cleanup;
+  - retired operation IDs.
 
 **After `7aca7c0` (affected checks only; NOT a full run):**
 - `tests/replay_boundaries.test.mjs` (promoted from a scratch run): environment and fingerprint
