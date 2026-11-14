@@ -27,6 +27,7 @@ import { collectIssues, parseBytes, checkSuccessor, encodeCatalog, CatalogReject
 import { diffCatalogs, summarize } from './lib/diff.mjs';
 import { appBehaviourNotes } from './lib/capabilities.mjs';
 import { imageReferences, STORAGE_IMAGE_PREFIX, storageImageKey } from './lib/images.mjs';
+import { hostedTestTarget } from './backend/tools/hosted-target.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const VALIDATOR_VERSION = 'js-port-of-validate_catalog.py@e6c42ed';
@@ -61,7 +62,8 @@ class HttpError extends Error {
   }
 }
 
-// backend: null (simulated, the default) or { mode: 'local-supabase', supabaseUrl, publishableKey }.
+// backend: null (simulated, the default), { mode: 'local-supabase', supabaseUrl, publishableKey }, or
+// { mode: 'hosted-test', supabaseUrl, publishableKey, projectRef } (a checked non-production project).
 // In local-supabase mode this server only serves static files and public config: the page talks to the
 // LOCAL Supabase stack directly with the signed-in user's session, and every /api route is disabled.
 export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock = () => Date.now(), backend = null } = {}) {
@@ -625,11 +627,12 @@ export function createAdminServer({ stateDir = join(ROOT, '.local-state'), clock
     try {
       if (url.pathname === '/config.json') {
         return send(res, 200, backend
-          ? { mode: 'local-supabase', supabaseUrl: backend.supabaseUrl, publishableKey: backend.publishableKey, productionConfirmation: PRODUCTION_CONFIRMATION }
+          ? { mode: backend.mode, supabaseUrl: backend.supabaseUrl, publishableKey: backend.publishableKey, productionConfirmation: PRODUCTION_CONFIRMATION,
+              ...(backend.projectRef ? { projectRef: backend.projectRef } : {}) }
           : { mode: 'simulated', productionConfirmation: PRODUCTION_CONFIRMATION });
       }
       if (url.pathname.startsWith('/api/')) {
-        if (backend) throw new HttpError(404, 'simulation_disabled', 'The simulated API is disabled in local-supabase mode');
+        if (backend) throw new HttpError(404, 'simulation_disabled', `The simulated API is disabled in ${backend.mode} mode`);
         return await api(req, res, url);
       }
       if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'method', 'Method not allowed');
@@ -669,6 +672,16 @@ export function localSupabaseBackend({ supabaseUrl, publishableKey }) {
   const key = String(publishableKey ?? '');
   if (!/^sb_publishable_[A-Za-z0-9_-]+$/.test(key)) throw new Error('GEAR_SUPABASE_PUBLISHABLE_KEY must be a publishable key (sb_publishable_…); secret keys never go to the browser');
   return { mode: 'local-supabase', supabaseUrl: url.origin, publishableKey: key };
+}
+
+/**
+ * Hosted-test mode: an explicitly configured NON-production project only. All checks are in
+ * backend/tools/hosted-target.mjs (explicit ref, exact URL, production refs refused, typed
+ * confirmation, publishable key only, no privileged key in the environment).
+ */
+export function hostedTestBackend(env = process.env) {
+  const target = hostedTestTarget(env);
+  return { mode: 'hosted-test', supabaseUrl: target.url, publishableKey: target.publishableKey, projectRef: target.ref };
 }
 
 function cspFor(backend) {
@@ -758,12 +771,14 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === normalize(process.argv
   const port = Number(process.env.PORT ?? 4174);
   const backend = process.argv.includes('--backend=local-supabase')
     ? localSupabaseBackend({ supabaseUrl: process.env.GEAR_SUPABASE_URL, publishableKey: process.env.GEAR_SUPABASE_PUBLISHABLE_KEY })
-    : null;
+    : process.argv.includes('--backend=hosted-test') ? hostedTestBackend() : null;
   const { server, initialize } = createAdminServer({ backend });
   if (!backend) await initialize({ force: process.argv.includes('--reset') });
   server.listen(port, '127.0.0.1', () => {
     console.log(`85Blends Admin prototype (Recommended Gear): http://127.0.0.1:${port}`);
-    console.log(backend
+    console.log(backend?.mode === 'hosted-test'
+      ? `HOSTED TEST mode: NON-production project ${backend.projectRef} (${backend.supabaseUrl}). Fictional data only. Simulated API disabled.`
+      : backend
       ? `LOCAL SUPABASE mode: real local sign-in and TOTP against ${backend.supabaseUrl} (local stack, fictional data). Simulated API disabled.`
       : 'Local simulation only: fictional data, no network calls, publishing writes _admin-prototype/.local-state/.');
   });

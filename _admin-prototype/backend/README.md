@@ -16,6 +16,8 @@ tools/start-local.sh            # starts the stack; hands gear-publish the local
 # CURRENT DESIGN (what is proposed for deployment)
 node --test --test-concurrency=1 tests/*.test.mjs                 # resets the DB; ~6 min
 tools/check-deploy-package.sh                                     # the deployment package on its own stack; ~8 min
+# HOSTED (opt-in; an explicitly configured NON-production project only; never run by default)
+node --test tests/hosted/run-hosted-checks.mjs                    # refuses without the guard's variables (tools/hosted-target.mjs)
 # LEGACY FAILURE DEMONSTRATIONS (superseded Storage path; evidence only, never deployed)
 node --test --test-concurrency=1 tests/legacy-storage/*.test.mjs  # ~6 min
 GEAR_LOCAL_JWT_EXPIRY=60 tools/start-local.sh && GEAR_LOCAL_JWT_EXPIRY=60 node tools/ui-local-supabase.mjs [shots-dir]
@@ -77,6 +79,13 @@ Plan §6.2 has the full description and the re-run scenario table.
     `tests/review_images.test.mjs`, `tests/deploy_package.test.mjs`,
     `tests/package_mode.test.mjs` (package stack only);
   - legacy failure demonstrations: `tests/legacy-storage/` only.
+- **Images:** in their own bucket, `recommended-gear-images`. The existing `recommended-gear`
+  bucket is never altered (`deploy/ROLLOUT.md`: fresh vs existing project).
+- **Hosted mode** (prepared, unused):
+  - `server.mjs --backend=hosted-test` and `tests/hosted/run-hosted-checks.mjs`;
+  - both pass through `tools/hosted-target.mjs`: explicit ref and URL, production refs refused,
+    typed confirmation, publishable key only, no privileged key in the environment;
+  - functions answer CORS themselves, checked by `tests/cors.test.mjs`, which bypasses local Kong.
 - **Staging is public (D11):** fictional or approved-for-public content only, labelled in the
   admin UI. Production partner approval is separate.
 - **Client model:** `tests/client-model.mjs` is a line-referenced model of the iOS `accept` rule.

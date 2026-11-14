@@ -1,4 +1,4 @@
-// gear-publish: validates, reviews and commits Recommended Gear publications (LOCAL implementation).
+// gear-publish: validates, reviews and commits Recommended Gear publications.
 // Decision D10, option 2: the DATABASE is the publication channel. There is no Storage catalog write.
 //
 // Authorization is checked here and again, independently, by the database:
@@ -25,15 +25,20 @@ import { parseBytes, checkSuccessor, encodeCatalog, collectIssues, CatalogReject
 import { diffCatalogs, summarize } from '../_shared/diff.mjs';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
-const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+// The key sent as `apikey` with user-JWT requests to Auth, PostgREST and Storage. Prefer the
+// project's publishable key (GEAR_PUBLIC_API_KEY, a function secret), so nothing here depends on
+// the legacy JWT anon key, which credential remediation may disable.
+const ANON_KEY = Deno.env.get('GEAR_PUBLIC_API_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 // Production: a dedicated publisher secret key. NOTE: any secret key acts as service_role across
 // the whole project (plan §5); "dedicated" means separately rotatable, not restricted.
 const SERVICE_KEY = Deno.env.get('GEAR_PUBLISHER_SECRET_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 const PINNED_PUBLISHER = Deno.env.get('GEAR_PUBLISHER_USER_ID') ?? '';
-const STEP_UP_SECONDS = Number(Deno.env.get('GEAR_PRODUCTION_STEP_UP_SECONDS') ?? 900);
 const UPLOAD_TIMEOUT_SECONDS = Number(Deno.env.get('GEAR_UPLOAD_TIMEOUT_SECONDS') ?? 20); // image uploads
 const MAX_FUTURE_SKEW = 300;
-const BUCKET = 'recommended-gear';
+// Gear images live in their own bucket. The legacy recommended-gear bucket (old catalog objects,
+// read by installed builds) is only ever READ here, by the verifier.
+const IMAGE_BUCKET = Deno.env.get('GEAR_IMAGE_BUCKET') ?? 'recommended-gear-images';
+const LEGACY_CATALOG_BUCKET = 'recommended-gear';
 const CONFIRMATION = 'PUBLISH PRODUCTION';
 const VALIDATOR_VERSION = 'js-port-of-validate_catalog.py@e6c42ed';
 const TARGETS = ['staging', 'production'];
@@ -107,15 +112,22 @@ function requireAdmin(caller: Caller) {
   if (caller.aal !== 'aal2') throw new HttpError(403, 'mfa_required', 'Verify with your authenticator app (aal2) first');
 }
 
-function requirePublisher(caller: Caller, target: string) {
+/** Publisher identity: role, aal2 and the pinned ID. The Production step-up is checked separately. */
+function requirePublisher(caller: Caller) {
   requireAdmin(caller);
   if (caller.role !== 'publisher') throw new HttpError(403, 'publisher_required', 'Only the publisher can publish or roll back');
   if (!PINNED_PUBLISHER || caller.id !== PINNED_PUBLISHER) throw new HttpError(403, 'publisher_not_pinned', 'This account is not the configured publisher');
-  if (target === 'production') {
-    const totp = caller.amr.filter((m) => m.method === 'totp').map((m) => m.timestamp).sort().at(-1);
-    if (!totp || Math.floor(Date.now() / 1000) - totp > STEP_UP_SECONDS) {
-      throw new HttpError(403, 'mfa_step_up_required', `Production needs a TOTP verification within the last ${STEP_UP_SECONDS} s`);
-    }
+}
+
+/** Production needs a TOTP verification within the window stored in gear_settings (one source of truth
+ *  for this function and the commit RPC, which checks it again in the database). */
+async function requireStepUp(caller: Caller, target: string) {
+  if (target !== 'production') return;
+  const [settings] = await rest('gear_settings?select=production_step_up_seconds');
+  const window = Number(settings?.production_step_up_seconds ?? 900);
+  const totp = caller.amr.filter((m) => m.method === 'totp').map((m) => m.timestamp).sort().at(-1);
+  if (!totp || Math.floor(Date.now() / 1000) - totp > window) {
+    throw new HttpError(403, 'mfa_step_up_required', `Production needs a TOTP verification within the last ${window} s`);
   }
 }
 
@@ -271,7 +283,7 @@ async function uploadImage(caller: Caller, req: Request, url: URL) {
   if (existing.length) return { publicURL, alreadyStored: true, width: info.width, height: info.height };
   const nonce = await rpc('gear_authorize_image', { p_name: name, p_user_id: caller.id, p_size: bytes.length, p_content_type: declared });
   try {
-    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${name}`, {
+    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${IMAGE_BUCKET}/${name}`, {
       method: 'POST', body: bytes,
       headers: { apikey: ANON_KEY, Authorization: `Bearer ${caller.jwt}`, 'Content-Type': declared, 'Cache-Control': 'public, max-age=31536000, immutable',
         'x-upsert': 'false', 'x-metadata': b64(JSON.stringify({ gear_image: nonce })) },
@@ -286,7 +298,7 @@ async function uploadImage(caller: Caller, req: Request, url: URL) {
     await rpc('gear_consume_image', { p_name: name }).catch(() => {});
   }
   // read back: the stored bytes must hash to the name
-  const back = await fetch(`${SUPABASE_URL}/storage/v1/object/authenticated/${BUCKET}/${name}`, { headers: serviceHeaders() });
+  const back = await fetch(`${SUPABASE_URL}/storage/v1/object/authenticated/${IMAGE_BUCKET}/${name}`, { headers: serviceHeaders() });
   const ok = back.status === 200 && (await sha256(new Uint8Array(await back.arrayBuffer()))) === digest;
   await rpc('gear_audit', { p_actor: caller.id, p_event: 'image_upload', p_detail: { name, bytes: bytes.length, width: info.width, height: info.height, readBack: ok } });
   if (!ok) throw new HttpError(502, 'image_readback_mismatch', 'Stored image does not match the uploaded bytes; it is reported, not deleted');
@@ -323,7 +335,7 @@ async function verify(caller: Caller) {
       alerts.push({ target, kind: 'pointer_missing', message: 'publications exist but no current pointer is set' });
     }
     // The old mutable Storage objects are not authoritative and are never served by gear-catalog.
-    const legacy = await fetch(`${SUPABASE_URL}/storage/v1/object/info/authenticated/${BUCKET}/${legacyObjectPath(target)}`, { headers: serviceHeaders() });
+    const legacy = await fetch(`${SUPABASE_URL}/storage/v1/object/info/authenticated/${LEGACY_CATALOG_BUCKET}/${legacyObjectPath(target)}`, { headers: serviceHeaders() });
     if (legacy.status === 200) info.push({ target, kind: 'legacy_storage_object', message: `recommended-gear/${legacyObjectPath(target)} exists but is NOT the publication channel; only old app builds read it` });
     await legacy.body?.cancel();
     targets[target] = t;
@@ -393,7 +405,7 @@ async function requestFingerprint(target: string, body: any) {
 
 async function publish(caller: Caller, body: any, fault: string | null) {
   const target = body.target;
-  requirePublisher(caller, target);
+  requirePublisher(caller);
   if (target === 'production' && body.confirmation !== CONFIRMATION) throw new HttpError(400, 'confirmation_required', `Type ${CONFIRMATION} to publish to Production`);
   const operationId = String(body.operationId ?? '');
   if (!UUID.test(operationId)) throw new HttpError(400, 'operation_id_required', 'operationId (a UUID the client keeps for retries) is required');
@@ -407,9 +419,14 @@ async function publish(caller: Caller, body: any, fault: string | null) {
   const known = await rpc('gear_find_operation', { p_operation_id: operationId });
   if (known) {
     if (!sameRequest(known)) throw new HttpError(409, 'operation_conflict', 'This operation ID belongs to a different request');
+    // Already committed: return the original, even if the step-up window has passed since (nothing new is published).
     if (known.state === 'committed') return { ...(await rpc('gear_operation_result', { p_operation_id: operationId })), storage: 'committed' };
+    // Retired by cleanup without having committed: the same answer it got before cleanup.
+    if (known.state === 'retired') throw new HttpError(409, 'operation_expired', 'This operation expired without being published; review again (a new operation ID)');
+    await requireStepUp(caller, target);
     return commit(caller, operationId, fault);
   }
+  await requireStepUp(caller, target);
 
   const { head } = await loadTarget(target);
   if ((body.expectedLiveRevision ?? null) !== (head?.revision ?? null)) {

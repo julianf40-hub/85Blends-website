@@ -263,10 +263,7 @@ try {
     at('legacy object: key-holder write');
     const served = await (await fetch(`${ENV.API_URL}/functions/v1/gear-catalog/staging`)).text();
     const foreign = JSON.parse(served); foreign.revision = crypto.randomUUID(); foreign.publishedAt += 9999; foreign.brands = [];
-    assert.equal((await serviceWrite('staging', JSON.stringify(foreign))).status, 400, 'the bucket refuses JSON');
-    const forced = await fetch(`${ENV.API_URL}/storage/v1/object/recommended-gear/staging/catalog-v1.json`, { method: 'POST', body: JSON.stringify(foreign),
-      headers: { apikey: ENV.SERVICE_ROLE_KEY, Authorization: `Bearer ${ENV.SERVICE_ROLE_KEY}`, 'Content-Type': 'image/png', 'x-upsert': 'true' } });
-    assert.equal(forced.status, 200, 'a key holder can still force bytes there (mislabelled)');
+    assert.equal((await serviceWrite('staging', JSON.stringify(foreign))).status, 200, 'the legacy bucket is unchanged, so a key holder can still write it');
     assert.equal(await (await fetch(`${ENV.API_URL}/functions/v1/gear-catalog/staging`)).text(), served, 'apps still receive the database publication');
     await A.reload(); await A.waitForSelector('#brand-list li');
     await tab(A, 'publish');

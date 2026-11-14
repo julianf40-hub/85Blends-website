@@ -33,10 +33,12 @@ stale. Nothing here has been applied to any hosted project.
 | `GEAR_PUBLISHER_USER_ID` | The publisher's Auth user ID in that project |
 | `GEAR_PUBLISHER_SECRET_KEY` | A dedicated `sb_secret_…` key for that project (acts as `service_role` project-wide, plan §5) |
 | `GEAR_ALLOWED_ORIGINS` | The admin page origin(s), comma-separated |
-| `GEAR_IMAGE_PUBLIC_BASE` | `https://<project-ref>.supabase.co/storage/v1/object/public/recommended-gear/images/` |
-| `GEAR_PRODUCTION_STEP_UP_SECONDS` | Must equal `gear_settings.production_step_up_seconds` (default 900; D5) |
+| `GEAR_IMAGE_PUBLIC_BASE` | `https://<project-ref>.supabase.co/storage/v1/object/public/recommended-gear-images/images/` |
+| `GEAR_IMAGE_BUCKET` | Optional; defaults to `recommended-gear-images` |
+| `GEAR_PUBLIC_API_KEY` | That project's **publishable** key (`sb_publishable_…`). Used as `apikey` for anon reads and user-JWT calls, so nothing depends on the legacy JWT anon key |
 
-`SUPABASE_URL` and `SUPABASE_ANON_KEY` are provided by the platform.
+`SUPABASE_URL` is provided by the platform. The Production step-up window has a single source:
+`gear_settings.production_step_up_seconds` (default 900; D5), read by both the function and the commit RPC.
 
 ## Apply (to a NON-production project first; plan §12 B, hosted-environment proposal)
 
@@ -46,19 +48,24 @@ cp deploy/package/migrations/*.sql supabase/migrations/   # in a clean checkout 
 supabase db push
 supabase functions deploy gear-publish
 supabase functions deploy gear-catalog --no-verify-jwt
-supabase secrets set GEAR_PUBLISHER_USER_ID=… GEAR_ALLOWED_ORIGINS=… GEAR_IMAGE_PUBLIC_BASE=… GEAR_PRODUCTION_STEP_UP_SECONDS=900
+supabase secrets set GEAR_PUBLISHER_USER_ID=… GEAR_ALLOWED_ORIGINS=… GEAR_IMAGE_PUBLIC_BASE=… GEAR_PUBLIC_API_KEY=…
 supabase secrets set GEAR_PUBLISHER_SECRET_KEY=…        # from the dashboard, never pasted into files
 ```
 
-For the live project, this migration is reviewed in `E85-Blends-App` (plan §12 C). It is
-idempotent toward the existing `recommended-gear` bucket, whose settings it does not change.
+**Fresh project vs existing project:** see `ROLLOUT.md`, which has preflight and postflight
+queries for each. The migration creates the new image bucket `recommended-gear-images` and never
+touches the existing `recommended-gear` bucket. For the live project it is reviewed in
+`E85-Blends-App` (plan §12 C).
 
 ## Operations
 
-- **Pending-operation cleanup:** call `gear_cleanup_operations()` hourly (service role; for
-  example with `pg_cron` calling the function, or a scheduled function).
-  - Pending intents that expired more than 1 hour ago are deleted. They never committed, so a
-    retry simply prepares again under the same fingerprint.
+- **Pending-operation cleanup:** call `gear_cleanup_operations()` hourly. `ops/schedule-cleanup.sql`
+  is a separate, optional script that enables `pg_cron` and schedules it; review and run it
+  after the migration.
+  - Pending intents that expired more than 1 hour ago lose their document but keep a tombstone
+    (operation ID, publisher, target, fingerprint) in `private.gear_retired_operations`.
+    Afterwards, a same-request retry gets `operation_expired`, as it did before cleanup; any other
+    use of that ID gets `operation_conflict`.
   - Committed intents older than 7 days are deleted. Their replay protection stays, because
     retries are recognized from `gear_catalog_publications.operation_id` and `request_digest`,
     which are append-only.

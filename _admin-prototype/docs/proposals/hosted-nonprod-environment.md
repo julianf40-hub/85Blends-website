@@ -1,110 +1,112 @@
 # Proposal: hosted non-production environment (plan §12 B, decision D4)
 
-Status: **recommendation only. Nothing has been created.** Every step below is for Julian to run,
-or to approve before anyone runs it.
+Status: **recommendation only. Nothing has been created.** Every step is for Julian to run, or to
+approve before anyone runs it.
 
-## Recommendation: a separate Free-plan project in its own organization
+## Sources (official only, read 2026-11-14)
 
-| Option | Cost | Isolation from production | Notes |
+- Pricing page, https://supabase.com/pricing:
+  - Free plan: $0, 2 active projects, paused after 1 week of inactivity, 500 MB database, 1 GB file
+    storage, 5 GB egress, 500,000 Edge Function invocations, no automatic backups;
+  - Pro: from $25/month, including $10/month of compute credits (one Micro instance);
+  - Micro compute: $10/month;
+  - branching: $0.01344 per branch-hour (Pro and Team plans).
+- Billing docs, https://supabase.com/docs/guides/platform/billing-on-supabase:
+  - "You are granted two free projects. The project limit applies across all organizations where
+    you are an Owner or Administrator... Paused projects do not count towards your free project
+    limit."
+  - Billing is per organization, and plans cannot be mixed within one organization.
+
+**A separate organization does not give a separate free quota.** The two-project limit is per
+user, across every organization where that user is an Owner or Administrator.
+
+## Capacity, verified (read-only, through the session's Supabase connector, 2026-11-14)
+
+| Organization | Plan | Projects |
+|---|---|---|
+| The account's only visible organization | **Free** | the live project: **ACTIVE**; a promo-validation project: **INACTIVE** (paused) |
+
+- **One active free project is in use, so one free slot is available today.** Paused projects
+  don't count, so resuming the paused project would use that slot.
+- **Limit of this check:** it sees only the organizations of the account connected to this
+  session. Any other organization where Julian is an Owner or Administrator under another login
+  also counts toward the two. Julian should confirm there is none.
+- **Observation for the production-launch tier:** the live project is on the Free plan, so it is
+  subject to the inactivity pause. That is outside this proposal, but it matters before the
+  apps depend on the catalog endpoint.
+
+## Options
+
+| Option | Cost (official prices) | Isolation | Availability |
 |---|---|---|---|
-| **A. New Free-plan project in a new, separate organization (recommended)** | **$0/month** | Full: own org, own keys, own Auth users, no shared billing or Git integration | Free limits: 2 active projects per account (paused projects don't count); paused after 1 week without activity (resume by hand; data kept); 500 MB database, 1 GB file storage, 5 GB egress, 500,000 Edge Function invocations; no automatic backups. All are ample for fictional data |
-| B. Branch of the live project (Pro/Team only) | $0.01344 per branch-hour ≈ $0.32/day, about $9.81 for 30 days left on | Weaker: same org and billing, created from the live project's Git integration, next to production credentials | Only if the live project is already on Pro and Git-integrated |
-| C. New project in a paid organization | Micro compute $10/month (Pro from $25/month includes $10 compute credit, usually used by the live project) | Full | Pay only if A's limits block something |
+| **A. New Free-plan project** (recommended, if the slot is confirmed free) | **$0** | Its own project, keys and Auth users. A new organization adds separate membership and settings, but not a separate quota | One slot today. It pauses after 1 week of inactivity (resume by hand; data is kept). No automatic backups, which is fine for fictional data |
+| B. Branch of the live project | $0.01344 per branch-hour | Weak: tied to the live project | **Not available:** branching needs Pro or Team, and the organization is Free |
+| C. New organization on Pro for this project | from $25/month (the $10 compute credit covers its one Micro instance) | Full, with separate billing | No free-slot constraint. Upgrading the **existing** organization instead would also change the live project's plan, so it is not proposed |
 
-Prices are from supabase.com/pricing, read 2026-11-14. Re-check before creating anything.
+**Recommendation:** use A if Julian confirms the slot is free (no other organizations, and the
+paused project stays paused); otherwise C.
 
-**Why A:**
-- It costs nothing.
-- It shares nothing with production: keys, users, billing or Git integration. Credential
-  remediation therefore proceeds independently and is untouched.
-- Its limits fit a fictional-data test project.
+## Setup steps (not executed)
 
-**Caveat:** if the account already has two active Free projects, pause one or use option C.
-
-## Exact setup steps (not executed)
-
-Names below are suggestions. Use a region close to the live project's, so latency results carry
-over.
-
-1. **Organization and project** (dashboard):
-   - New organization `85Blends Non-Production`, plan **Free**;
-   - New project `gear-admin-nonprod` with a generated database password, stored in Julian's
-     password manager only;
-   - Record the project ref.
-2. **Auth** (dashboard → Authentication):
-   - Providers: Email on; **Allow new users to sign up: off**;
-   - Multi-Factor: TOTP enabled (on by default on hosted projects);
-   - JWT expiry: 3600 s at first, to compare with local; then the D5 value;
-   - Users → Add user → Create new user, with auto-confirm: two **fictional** accounts (publisher,
-     editor) using an address domain you control or `example.test`. Never Julian's production
-     account. Save their IDs.
-3. **Keys** (Settings → API Keys): create a **new secret key** `gear-publisher-nonprod`.
-   - It exists only in this project and is never copied into a file or chat.
-   - The publishable key is public by design.
-4. **Schema** (CLI, in a clean working copy):
-   ```sh
-   supabase login                                   # Julian's own CLI session
-   supabase link --project-ref <nonprod-ref>
-   mkdir -p supabase/migrations && cp <backend>/deploy/package/migrations/*.sql supabase/migrations/
-   supabase db push
-   ```
-   Then in the SQL editor:
-   - `insert into public.gear_admins (user_id, role) values ('<publisher-id>', 'publisher'), ('<editor-id>', 'editor');`
-   - `update public.gear_settings set production_step_up_seconds = 900;` (or a shorter value for
-     the expiry tests).
+1. **Project:** dashboard → new project `gear-admin-nonprod`, in its own organization (for
+   separate membership) or in the existing one. The quota is the same either way. Use the region
+   of the live project, `us-east-1`, so latency results carry over. Store the generated database
+   password in Julian's password manager only.
+2. **Auth:**
+   - Email provider on; sign-ups **off**; TOTP MFA on;
+   - JWT expiry 3600 s at first;
+   - create two **fictional** users (publisher, editor) with auto-confirm, and enroll TOTP for
+     each. They are never Julian's production account.
+3. **Keys:**
+   - a new secret key `gear-publisher-nonprod`, for this project only;
+   - the publishable key, which is public by design.
+4. **Schema:** apply `backend/deploy/package/migrations/` with `supabase link` and
+   `supabase db push`, following **`ROLLOUT.md` path A** (fresh project), including its preflight
+   and postflight queries. Then insert the two `gear_admins` rows. Optionally run
+   `deploy/package/ops/schedule-cleanup.sql` after review.
 5. **Functions:**
+   - `supabase functions deploy gear-publish`, and `gear-catalog --no-verify-jwt`;
+   - secrets:
+     - `GEAR_PUBLISHER_USER_ID`;
+     - `GEAR_PUBLISHER_SECRET_KEY` (entered at a prompt, never on a command line);
+     - `GEAR_PUBLIC_API_KEY` (the publishable key);
+     - `GEAR_ALLOWED_ORIGINS=http://127.0.0.1:4174` (where the admin UI runs);
+     - `GEAR_IMAGE_PUBLIC_BASE=https://<ref>.supabase.co/storage/v1/object/public/recommended-gear-images/images/`.
+   - Never set `GEAR_ALLOW_TEST_FAULTS`; the package has no fault code anyway.
+6. **Admin UI against it:**
    ```sh
-   mkdir -p supabase/functions && cp -R <backend>/deploy/package/functions/. supabase/functions/
-   supabase functions deploy gear-publish
-   supabase functions deploy gear-catalog --no-verify-jwt
-   supabase secrets set GEAR_PUBLISHER_USER_ID=<publisher-id> GEAR_ALLOWED_ORIGINS=<admin-origin> \
-     GEAR_IMAGE_PUBLIC_BASE=https://<nonprod-ref>.supabase.co/storage/v1/object/public/recommended-gear/images/ \
-     GEAR_PRODUCTION_STEP_UP_SECONDS=900
-   supabase secrets set GEAR_PUBLISHER_SECRET_KEY        # prompts; paste the step-3 key there, never on the command line
+   GEAR_HOSTED_TEST_PROJECT_REF=<ref> GEAR_HOSTED_TEST_URL=https://<ref>.supabase.co GEAR_HOSTED_TEST_CONFIRM=<ref> \
+   GEAR_PRODUCTION_PROJECT_REFS=<live ref> GEAR_HOSTED_TEST_PUBLISHABLE_KEY=<publishable key> \
+   node server.mjs --backend=hosted-test
    ```
-   - Never set `GEAR_ALLOW_TEST_FAULTS`. The package has no fault code anyway.
-   - Confirm that `deploy/package/MANIFEST.json` hashes match the deployed sources.
-6. **Cleanup schedule** (SQL editor):
-   - enable `pg_cron`;
-   - `select cron.schedule('gear-cleanup-operations', '17 * * * *', $$select public.gear_cleanup_operations()$$);`
-7. **Admin UI access:**
-   - `server.mjs` local-supabase mode deliberately accepts only loopback URLs, so it cannot point
-     at this project as is.
-   - Hosted testing needs a separate, explicit mode bound to this one project ref. That is a small
-     reviewed change and has **not** been made.
-   - Until then, the hosted checks below run from scripts with the fictional accounts.
+   It refuses the live project, refuses a mismatched or unconfirmed target, and refuses to start
+   if a privileged key is in the environment (`backend/tools/hosted-target.mjs`).
+7. **Hosted checks:** run `node --test backend/tests/hosted/run-hosted-checks.mjs` with the same
+   variables, plus the fictional publisher's credentials and `GEAR_HOSTED_TEST_ADMIN_ORIGIN`.
+   - It is read-only unless `GEAR_HOSTED_TEST_WRITES=staging`, and it never publishes to
+     Production.
+   - It never resets, seeds, runs SQL or uses a service key.
 
-## Hosted checks to run there (from plan §12 B)
+## Hosted checks still open (plan §12 B)
 
 - **gear-catalog:**
-  - a guest with no apikey gets 200 or 404 from a `verify_jwt = false` function;
-  - compression, and whether the ETag stays strong or is weakened;
-  - `Cache-Control` and 304 through any CDN;
-  - latency at one request per device per 60 s.
+  - a guest with no apikey (status and gateway behavior);
+  - whether responses are compressed and ETags weakened;
+  - the function's own preflight;
+  - publishable-key-only access to the read RPC (`GEAR_PUBLIC_API_KEY`);
+  - invocation latency.
 - **gear-publish:**
-  - the commit RPC with hosted-issued JWTs (asymmetric signing keys, `amr` contents);
-  - the Production step-up window;
-  - whether a request keeps running after the client disconnects (the design is safe either
-    way);
-  - CORS for the admin origin;
-  - the names of the injected secrets.
-- **Images:** that Storage's dry-run RLS and `x-metadata` behave as locally; that TUS and
-  S3-protocol uploads are refused for paths without a grant.
-- **Auth:**
-  - PostgREST's accepted clock skew on expired JWTs (about 30 s locally);
-  - that a revoked session is refused by the function;
-  - magic-link delivery (if adopted) and rate limits.
-- **Scheduling:** the `pg_cron` cleanup and the verifier.
-- **iOS:** a TestFlight build with the endpoint change, reading Staging from this project. That
-  needs a build whose `SUPABASE_URL` points at the non-production project, which is an Xcode
-  configuration decision for Julian; nothing in this proposal changes app configuration.
+  - whether the gateway passes the `OPTIONS` preflight through to the function with
+    `verify_jwt = true`. Locally the runtime did; Kong hid this, so the local test goes direct;
+  - hosted-issued JWTs (signing keys, `amr`);
+  - whether processing continues after a client disconnects.
+- **Auth:** PostgREST's clock skew on expired JWTs (about 30 s locally); revocation behavior.
+- **Images:** dry-run RLS and `x-metadata`; TUS and S3-protocol refusal without a grant.
+- **Scheduling:** `pg_cron` cleanup.
+- **iOS:** a TestFlight build whose `SUPABASE_URL` points at the test project, which is Julian's
+  Xcode configuration decision.
 
-The test helpers currently assume local Docker and a superuser `psql` connection, so they need a
-hosted adapter: service key and database URL from the environment, and no superuser-only steps.
-That adapter has **not** been written.
+## Never in this environment
 
-## What this environment must never have
-
-Production data, the live project's keys, Julian's production Auth account, or a route from the
-apps' production builds. The non-production Staging endpoint is public (D11), like production
-Staging, so it gets fictional or approved-for-public content only.
+Production data, the live project's keys, Julian's production Auth account, or a route from
+production app builds. Its Staging endpoint is public (D11), so it holds fictional content only.

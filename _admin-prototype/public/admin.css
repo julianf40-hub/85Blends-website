@@ -269,3 +269,5 @@ legend { font-weight: 700; padding: 0 6px; }
 .account-who { font-size: 13px; }
 .break { word-break: break-all; }
 .public-chip { background: #ffd7d7; color: #6b0000; font-weight: 800; letter-spacing: .06em; }
+/* hosted-test mode: a non-production hosted project; distinct from local (teal) and simulated (amber) */
+.sim-banner.hosted-test { background: repeating-linear-gradient(-45deg, #3a0030, #3a0030 12px, #4a003e 12px, #4a003e 24px); color: #ffc2f0; }

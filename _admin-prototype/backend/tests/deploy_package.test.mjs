@@ -20,15 +20,16 @@ test('the committed package equals a fresh build from the allowlisted sources', 
 
 test('the package holds only the current design: an exact file allowlist', () => {
   assert.deepEqual(tree(PKG).sort(), [
-    'MANIFEST.json', 'README.md', 'functions.toml', 'functions/_shared/diff.mjs', 'functions/_shared/validator.mjs',
+    'MANIFEST.json', 'README.md', 'ROLLOUT.md', 'functions.toml', 'functions/_shared/diff.mjs', 'functions/_shared/validator.mjs',
     'functions/gear-catalog/index.ts', 'functions/gear-publish/index.ts', 'migrations/20261114130000_recommended_gear_admin.sql',
+    'ops/schedule-cleanup.sql',
   ]);
   const manifest = JSON.parse(readFileSync(join(PKG, 'MANIFEST.json'), 'utf8'));
   assert.deepEqual(Object.keys(manifest.files).sort(), tree(PKG).filter((f) => f !== 'MANIFEST.json').sort());
 });
 
 test('no test-only controls, legacy Storage path, local config or keys anywhere in the package code', () => {
-  for (const f of tree(PKG).filter((p) => p !== 'README.md')) {
+  for (const f of tree(PKG).filter((p) => !p.endsWith('.md'))) {
     const text = readFileSync(join(PKG, f), 'utf8');
     for (const bad of FORBIDDEN) assert.ok(!(bad instanceof RegExp ? bad.test(text) : text.includes(bad)), `${f} contains ${bad}`);
   }
@@ -53,6 +54,12 @@ test('the deployment migration defines the current design and none of the supers
   assert.ok(!/policy "gear catalog/i.test(sql), 'no Storage policy for catalog objects');
   assert.ok(!/on storage\.objects[^;]*for (update|delete)/i.test(sql), 'images are insert-only');
   assert.ok(!/create trigger[^;]*on storage\.objects/i.test(sql), 'no trigger on storage.objects');
+  // The existing recommended-gear bucket (installed builds, current publisher) is never touched.
+  assert.ok(!/'recommended-gear'/.test(sql), 'the migration never names the legacy recommended-gear bucket');
+  const bucketStatements = sql.split(';').filter((st) => /storage\.buckets/i.test(st));
+  assert.equal(bucketStatements.length, 1, 'one bucket statement');
+  assert.ok(!/update/i.test(bucketStatements[0]), 'it creates the image bucket and never changes an existing bucket');
+  assert.match(sql, /'recommended-gear-images'[\s\S]*on conflict \(id\) do nothing/);
 });
 
 test('the package functions are the sources minus only the marked test-only regions', () => {

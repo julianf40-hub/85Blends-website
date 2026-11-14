@@ -30,9 +30,10 @@ OUT="${1:-$BACKEND/.deploy-check-results}"; mkdir -p "$OUT"
 
 supabase stop >/dev/null 2>&1 || true
 ( cd "$W"
-  GEAR_LOCAL_SECRET_KEY=unset supabase start >/dev/null
+  GEAR_LOCAL_SECRET_KEY=unset GEAR_LOCAL_PUBLISHABLE_KEY=unset supabase start >/dev/null
   GEAR_LOCAL_SECRET_KEY="$(supabase status -o json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).SECRET_KEY))')"
-  export GEAR_LOCAL_SECRET_KEY
+  GEAR_LOCAL_PUBLISHABLE_KEY="$(supabase status -o json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).PUBLISHABLE_KEY))')"
+  export GEAR_LOCAL_SECRET_KEY GEAR_LOCAL_PUBLISHABLE_KEY
   supabase stop >/dev/null && supabase start >/dev/null )
 set +e
 GEAR_PACKAGE_CHECK=1 GEAR_SUPABASE_WORKDIR="$W" node --test --test-concurrency=1 \

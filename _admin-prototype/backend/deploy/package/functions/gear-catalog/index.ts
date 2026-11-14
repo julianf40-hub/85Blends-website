@@ -1,5 +1,5 @@
 // gear-catalog: the read-only endpoint apps use to fetch the current Recommended Gear catalog
-// (decision D10, option 2). LOCAL implementation.
+// (decision D10, option 2).
 //
 //   GET /functions/v1/gear-catalog/production   every app build, guests included (no sign-in)
 //   GET /functions/v1/gear-catalog/staging      TestFlight / Xcode / Debug previews only (app-side rule)
@@ -19,7 +19,12 @@
 //     accepted, so a delayed or cached older response cannot regress a client that has a newer one.
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
-const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+// A public key for the anon read RPC. Prefer the project's publishable key (GEAR_PUBLIC_API_KEY, a
+// function secret) sent as apikey alone, so the endpoint does not depend on the legacy JWT anon key
+// (credential remediation may disable legacy keys). A legacy JWT key is also sent as Bearer.
+const PUBLIC_KEY = Deno.env.get('GEAR_PUBLIC_API_KEY') ?? Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+const keyHeaders = (): Record<string, string> => (PUBLIC_KEY.startsWith('sb_publishable_')
+  ? { apikey: PUBLIC_KEY } : { apikey: PUBLIC_KEY, Authorization: `Bearer ${PUBLIC_KEY}` });
 const CACHE_CONTROL: Record<string, string> = { production: 'public, max-age=60', staging: 'no-cache' };
 
 async function sha256(bytes: Uint8Array) {
@@ -31,12 +36,19 @@ const etagMatches = (header: string | null, etag: string) =>
   !!header && header.split(',').map((t) => t.trim().replace(/^W\//, '')).some((t) => t === etag || t === '*');
 
 Deno.serve(async (req) => {
-  const base = { 'X-Content-Type-Options': 'nosniff', 'Access-Control-Allow-Origin': '*' };
+  // Public, credential-free content: any origin may read it. Browsers preflight If-None-Match, so the
+  // function answers OPTIONS itself (a hosted gateway may pass preflights through) and exposes its headers.
+  const base = { 'X-Content-Type-Options': 'nosniff', 'Access-Control-Allow-Origin': '*',
+    'Access-Control-Expose-Headers': 'ETag, X-Gear-Revision, X-Gear-Published-At' };
   const json = (status: number, body: unknown, cache = 'no-store') =>
     new Response(JSON.stringify(body), { status, headers: { ...base, 'Content-Type': 'application/json', 'Cache-Control': cache } });
 
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: { ...base, 'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+      'Access-Control-Allow-Headers': 'if-none-match, accept', 'Access-Control-Max-Age': '600', 'Cache-Control': 'no-store' } });
+  }
   if (req.method !== 'GET' && req.method !== 'HEAD') {
-    return new Response(null, { status: 405, headers: { ...base, Allow: 'GET, HEAD', 'Cache-Control': 'no-store' } });
+    return new Response(null, { status: 405, headers: { ...base, Allow: 'GET, HEAD, OPTIONS', 'Cache-Control': 'no-store' } });
   }
   const target = /\/gear-catalog\/(production|staging)\/?$/.exec(new URL(req.url).pathname)?.[1];
   if (!target) return json(404, { error: 'unknown_catalog', message: 'Use /gear-catalog/production or /gear-catalog/staging' });
@@ -45,7 +57,7 @@ Deno.serve(async (req) => {
   try {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/gear_current_catalog`, {
       method: 'POST', body: JSON.stringify({ p_target: target }),
-      headers: { apikey: ANON_KEY, Authorization: `Bearer ${ANON_KEY}`, 'Content-Type': 'application/json' },
+      headers: { ...keyHeaders(), 'Content-Type': 'application/json' },
     });
     if (!res.ok) return json(503, { error: 'unavailable' });
     rows = await res.json();

@@ -142,13 +142,58 @@ test('cleanup: expired pending operations are removed; committed operations keep
   // Boundaries still hold after cleanup.
   assert.equal((await send({ ...(await body('production')), operationId: committed.operationId })).data.error, 'operation_conflict');
   assert.equal((await send({ ...committed, reviewDigest: '1'.repeat(64) })).data.error, 'operation_conflict');
-  // The cleaned abandoned operation never committed: a retry is a fresh attempt, bound to the same
-  // fingerprint and re-checked against the current state. Nothing moved, so it commits exactly once;
-  // a further retry replays it.
+  // The cleaned abandoned operation never committed. Its ID stays bound (tombstone): the same request
+  // gets the same answer as before cleanup, and nothing is published.
   const retryAbandoned = await send(abandoned);
-  assert.equal(retryAbandoned.status, 200, JSON.stringify(retryAbandoned.data)); assert.equal(retryAbandoned.data.replayed, false);
-  const again = await send(abandoned);
-  assert.equal(again.data.replayed, true); assert.equal(again.data.revision, retryAbandoned.data.revision);
-  assert.equal(total(), before + 1);
+  assert.equal(retryAbandoned.status, 409); assert.equal(retryAbandoned.data.error, 'operation_expired');
+  assert.equal(total(), before);
   sql(`delete from private.gear_publish_intents where operation_id = '${fresh}'`);
+});
+
+test('after cleanup, a retired (never committed) operation ID stays bound: same request is told it expired; anything else conflicts', async () => {
+  publisher = await mfa('publisher');
+  await edit();
+  const original = await body('staging');
+  await preparePending(original);
+  sql(`update private.gear_publish_intents set expires_at = now() - interval '2 hours' where operation_id = '${original.operationId}'`);
+  const cleaned = await svc('gear_cleanup_operations', {});
+  assert.ok(cleaned.data.pendingDeleted >= 1);
+  assert.equal(sql(`select count(*) from private.gear_publish_intents where operation_id = '${original.operationId}'`), '0', 'document deleted');
+  assert.equal(sql(`select count(*) from private.gear_retired_operations where operation_id = '${original.operationId}'`), '1', 'binding kept');
+  const before = total();
+  const same = await send(original);
+  const otherTarget = await send({ ...(await body('production')), operationId: original.operationId });
+  await edit();
+  const otherContent = await send({ ...(await body('staging')), operationId: original.operationId });
+  evidence('retired-operation', { same: same.data.error, otherTarget: otherTarget.data.error, otherContent: otherContent.data.error });
+  assert.equal(same.data.error, 'operation_expired');
+  assert.equal(otherTarget.data.error, 'operation_conflict');
+  assert.equal(otherContent.data.error, 'operation_conflict');
+  assert.equal(total(), before, 'nothing published');
+  // The database refuses to prepare a retired or already-published ID, even if called directly.
+  const direct = await svc('gear_prepare_intent', { p: { operation_id: original.operationId } });
+  assert.match(JSON.stringify(direct.data), /operation_conflict/);
+});
+
+test('a committed Production operation is replayed even after the step-up window has passed (nothing new is published)', async () => {
+  publisher = await mfa('publisher');
+  await edit();
+  const prod = await body('production');
+  const first = await send(prod);
+  assert.equal(first.status, 200, JSON.stringify(first.data));
+  sql(`update public.gear_settings set production_step_up_seconds = 30`);
+  try {
+    await sleep(32_000); // past the (shortened) step-up window
+    const before = total();
+    const replay = await send(prod);
+    assert.equal(replay.status, 200, JSON.stringify(replay.data)); assert.equal(replay.data.replayed, true);
+    assert.equal(replay.data.revision, first.data.revision);
+    assert.equal(total(), before);
+    // A NEW Production publish in the same stale session is still refused by the step-up.
+    await edit();
+    const fresh = await send(await body('production'));
+    assert.equal(fresh.data.error, 'mfa_step_up_required');
+  } finally {
+    sql(`update public.gear_settings set production_step_up_seconds = 40`);
+  }
 });

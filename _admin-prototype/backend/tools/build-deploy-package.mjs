@@ -7,7 +7,7 @@
 //     functions/gear-catalog/index.ts
 //     functions/_shared/{validator,diff}.mjs
 //     functions.toml                           verify_jwt per function
-//     README.md                                from deploy/README.md
+//     README.md, ROLLOUT.md                    from deploy/ (fresh vs existing project rollout)
 //     MANIFEST.json                            sha256 of every file above
 //
 // Only the allowlisted sources below are read, so nothing else (the legacy demo function, the
@@ -31,6 +31,8 @@ export const SOURCES = {
   migrations: join(BACKEND, 'deploy', 'migrations'),
   functions: { 'gear-publish': ['index.ts'], 'gear-catalog': ['index.ts'], _shared: ['validator.mjs', 'diff.mjs'] },
   readme: join(BACKEND, 'deploy', 'README.md'),
+  rollout: join(BACKEND, 'deploy', 'ROLLOUT.md'),
+  ops: join(BACKEND, 'deploy', 'ops'),
 };
 
 // Strings that must never appear in the package (test hooks, the superseded Storage path, local-only config).
@@ -85,9 +87,11 @@ export function buildPackage() {
     '[functions.gear-catalog]', 'verify_jwt = false', '',
   ].join('\n'));
   files.set('README.md', readFileSync(SOURCES.readme, 'utf8'));
+  files.set('ROLLOUT.md', readFileSync(SOURCES.rollout, 'utf8'));
+  for (const f of readdirSync(SOURCES.ops).filter((n) => n.endsWith('.sql')).sort()) files.set(`ops/${f}`, readFileSync(join(SOURCES.ops, f), 'utf8'));
   const problems = [];
   for (const [path, content] of files) {
-    if (path === 'README.md') continue; // prose may name what is excluded
+    if (path.endsWith('.md')) continue; // prose may name what is excluded
     for (const bad of FORBIDDEN) if (matches(content, bad)) problems.push(`${path}: contains forbidden "${bad}"`);
   }
   if (problems.length) throw new Error(`deployment package rejected:\n  ${problems.join('\n  ')}`);

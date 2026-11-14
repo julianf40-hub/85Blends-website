@@ -300,22 +300,22 @@ test('Production step-up is enforced by the database at commit, not only by the 
 });
 
 // ---------------------------------------------------------------- no second channel
-test('the old mutable Storage path is not a publication channel: no client can write it, and it is never served', async () => {
+test('the old mutable Storage path is not a publication channel: no client can write it, a key holder\'s write is never served', async () => {
   const before = await catalog('staging');
   const write = await http('/storage/v1/object/recommended-gear/staging/catalog-v1.json', { method: 'POST', token: publisher, raw: true, body: '{"x":1}',
     headers: { 'Content-Type': 'application/json', 'x-upsert': 'true' } });
   assert.ok(write.status >= 400, `publisher wrote the legacy object: ${write.status}`);
-  // The bucket accepts images only, so even a key holder's ordinary JSON upload is refused.
+  // The legacy recommended-gear bucket is left exactly as it is (an existing project keeps it for
+  // installed builds and the current publisher); a fresh project has no such bucket at all.
+  const legacyBucket = sql(`select count(*) from storage.buckets where id = 'recommended-gear'`) === '1';
   const foreign = JSON.parse(before.body); foreign.revision = randomUUID(); foreign.publishedAt += 9999; foreign.brands = [];
-  assert.equal((await serviceWrite('staging', JSON.stringify(foreign))).status, 400, 'JSON is not an allowed type');
-  // A key holder can still force bytes there (mislabelled as an image), but nothing reads it as the catalog.
-  const forced = await http('/storage/v1/object/recommended-gear/staging/catalog-v1.json', { method: 'POST', key: ENV.SERVICE_ROLE_KEY, token: ENV.SERVICE_ROLE_KEY,
-    raw: true, body: JSON.stringify(foreign), headers: { 'Content-Type': 'image/png', 'x-upsert': 'true' } });
-  assert.equal(forced.status, 200, JSON.stringify(forced.data));
+  const keyHolder = await serviceWrite('staging', JSON.stringify(foreign));
+  if (legacyBucket) assert.equal(keyHolder.status, 200, 'a key holder can still write the old object (bucket unchanged)');
+  else assert.ok(keyHolder.status >= 400, 'fresh project: no legacy bucket to write');
   const after = await catalog('staging');
   assert.ok(after.body.equals(before.body), 'endpoint still serves the database pointer');
   const v = await fn(publisher, { action: 'verify' });
-  assert.ok(v.data.info.some((i) => i.kind === 'legacy_storage_object' && i.target === 'staging'), 'verifier reports the stray object');
+  if (legacyBucket) assert.ok(v.data.info.some((i) => i.kind === 'legacy_storage_object' && i.target === 'staging'), 'verifier reports the stray object');
   assert.equal(v.data.alerts.filter((a) => a.kind !== 'image').length, 0, JSON.stringify(v.data.alerts));
   // The Storage-path RPCs are not callable, even with the service key.
   for (const rpc of ['gear_acquire_lease', 'gear_record_publication', 'gear_authorize_write']) {

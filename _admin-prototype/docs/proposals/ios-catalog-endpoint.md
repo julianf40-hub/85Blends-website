@@ -4,9 +4,11 @@ Status: **prepared, not yet natively tested, not pushed.**
 - The change is one commit on an isolated local branch, `feature/gear-catalog-endpoint`, on
   `origin/main` `e6c42ed`. It is saved here as `ios-gear-catalog-endpoint.patch`. Nothing in
   `E85-Blends-App` on GitHub has been changed.
-- **Why it isn't pushed:** that repo's `CLAUDE.md` says Xcode Cloud start conditions live in App
-  Store Connect, so a branch push could start a build, and Xcode Cloud builds are not to be
-  started.
+- **Why it isn't pushed:** no push was requested. (Correction: an earlier version said a push could
+  start an Xcode Cloud build. The previously confirmed workflows, Default and 85Blends Internal,
+  are manual-only. The current App Store Connect settings could not be checked from this session,
+  so that confirmation has not been re-verified; it is not contradicted either.)
+- **Approval needs native tests:** run them on the Mac (below) before approving.
 - **Why it hasn't run:** the native tests need a Mac with Xcode. None was attached to the session
   that prepared them. The JavaScript model in `backend/tests/client-model.mjs` is **not** native
   validation.
@@ -126,6 +128,13 @@ newer one. This is verified with a line-by-line model of `accept` in
 change nothing; a rollback (new revision, newer timestamp) is accepted. What it cannot do, and no
 server design can: a device that never received the newer publication accepts the cached older
 one until the cache expires (at most 60 s for Production).
+
+## Images
+
+Images uploaded through the admin now live in a separate public bucket,
+`recommended-gear-images`. The existing `recommended-gear` bucket is never changed. The app
+accepts any `https` image URL (`GearCatalogValidation.secure`; `GearRemoteImage` has no host or
+bucket restriction), so neither installed nor updated builds need a change for this.
 
 ## Installed builds
 

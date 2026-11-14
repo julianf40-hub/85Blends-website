@@ -119,10 +119,10 @@ export function createSupabaseBackend(cfg) {
   }
 
   return {
-    mode: 'local-supabase',
+    mode: cfg.mode, // 'local-supabase' or 'hosted-test'
     config: cfg,
     async session() {
-      const base = { mode: 'local-supabase', productionConfirmation: 'PUBLISH PRODUCTION', accounts: [] };
+      const base = { mode: cfg.mode, productionConfirmation: 'PUBLISH PRODUCTION', accounts: [] };
       if (!session) return { ...base, user: null };
       try {
         const token = await accessToken();
@@ -188,12 +188,12 @@ export function createSupabaseBackend(cfg) {
     async publish(body) {
       const r = await fn({ action: 'publish', ...body });
       return { ...r, readBack: r.replayed ? 'already committed by an earlier attempt of this operation (no second publication)' : 'committed: the database pointer now names this publication',
-        objectPath: `${cfg.supabaseUrl}/functions/v1/gear-catalog/${r.target} (local stack)` };
+        objectPath: `${cfg.supabaseUrl}/functions/v1/gear-catalog/${r.target} (${cfg.mode === 'hosted-test' ? `test project ${cfg.projectRef}` : 'local stack'})` };
     },
     async rollback(body) {
       const r = await fn({ action: 'rollback', ...body });
       return { ...r, readBack: r.replayed ? 'already committed by an earlier attempt of this operation' : 'committed: the database pointer now names this publication',
-        objectPath: `${cfg.supabaseUrl}/functions/v1/gear-catalog/${r.target} (local stack)` };
+        objectPath: `${cfg.supabaseUrl}/functions/v1/gear-catalog/${r.target} (${cfg.mode === 'hosted-test' ? `test project ${cfg.projectRef}` : 'local stack'})` };
     },
     reconcile: null,
     acknowledge: (target, digest) => fn({ action: 'acknowledge', target, digest }),
@@ -216,5 +216,5 @@ export function createSupabaseBackend(cfg) {
 export async function createBackend() {
   const res = await fetch('/config.json', { cache: 'no-store' });
   const cfg = res.ok ? await res.json() : { mode: 'simulated' };
-  return cfg.mode === 'local-supabase' ? createSupabaseBackend(cfg) : createSimulatedBackend();
+  return ['local-supabase', 'hosted-test'].includes(cfg.mode) ? createSupabaseBackend(cfg) : createSimulatedBackend();
 }

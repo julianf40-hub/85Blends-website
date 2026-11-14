@@ -9,8 +9,10 @@ export SUPABASE_INTERNAL_IMAGE_REGISTRY="${SUPABASE_INTERNAL_IMAGE_REGISTRY:-doc
 export GEAR_LOCAL_JWT_EXPIRY="${GEAR_LOCAL_JWT_EXPIRY:-3600}"
 supabase stop >/dev/null 2>&1 || true
 # The local key is only known once the stack has started, so start once, read it, then restart.
-GEAR_LOCAL_SECRET_KEY=unset supabase start >/dev/null
+GEAR_LOCAL_SECRET_KEY=unset GEAR_LOCAL_PUBLISHABLE_KEY=unset supabase start >/dev/null
 GEAR_LOCAL_SECRET_KEY="$(supabase status -o json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).SECRET_KEY))')"
+GEAR_LOCAL_PUBLISHABLE_KEY="$(supabase status -o json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).PUBLISHABLE_KEY))')"
+export GEAR_LOCAL_PUBLISHABLE_KEY
 export GEAR_LOCAL_SECRET_KEY
 case "$GEAR_LOCAL_SECRET_KEY" in sb_secret_*) ;; *) echo "local SECRET_KEY is not an sb_secret_ key" >&2; exit 1 ;; esac
 supabase stop >/dev/null

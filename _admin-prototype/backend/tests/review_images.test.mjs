@@ -98,7 +98,7 @@ test('image upload: PNG and JPEG accepted (content-addressed, idempotent); edito
   const j = await upload(publisher, 'example-fuel-tools', jpegHeader(640, 480), 'image/jpeg');
   assert.equal(j.status, 200, JSON.stringify(j.data));
   assert.equal(j.data.height, 480);
-  const stored = await http(`/storage/v1/object/public/recommended-gear/images/northwind-sensors/${sha}.png`);
+  const stored = await http(`/storage/v1/object/public/recommended-gear-images/images/northwind-sensors/${sha}.png`);
   assert.equal(stored.status, 200);
 });
 
@@ -116,15 +116,15 @@ test('image upload: HEIF/HEIC, spoofed types, non-images, oversized dimensions a
 test('image storage rules: no direct uploads without a grant, no overwrites, no deletes', async () => {
   const p = png(5, 5, 9);
   const sha = createHash('sha256').update(p).digest('hex');
-  const direct = await http(`/storage/v1/object/recommended-gear/images/x/${sha}.png`, { method: 'POST', token: publisher, body: p, raw: true, headers: { 'Content-Type': 'image/png' } });
+  const direct = await http(`/storage/v1/object/recommended-gear-images/images/x/${sha}.png`, { method: 'POST', token: publisher, body: p, raw: true, headers: { 'Content-Type': 'image/png' } });
   assert.ok(direct.status >= 400, `direct image upload: ${direct.status}`);
   const ok = await upload(publisher, 'x', p, 'image/png');
   assert.equal(ok.status, 200);
-  const overwrite = await http(`/storage/v1/object/recommended-gear/images/x/${sha}.png`, { method: 'POST', token: publisher, body: png(5, 5, 1), raw: true, headers: { 'Content-Type': 'image/png', 'x-upsert': 'true' } });
+  const overwrite = await http(`/storage/v1/object/recommended-gear-images/images/x/${sha}.png`, { method: 'POST', token: publisher, body: png(5, 5, 1), raw: true, headers: { 'Content-Type': 'image/png', 'x-upsert': 'true' } });
   assert.ok(overwrite.status >= 400, `overwrite: ${overwrite.status}`);
-  const del = await http(`/storage/v1/object/recommended-gear/images/x/${sha}.png`, { method: 'DELETE', token: publisher });
-  assert.ok(del.status >= 400 || (await http(`/storage/v1/object/public/recommended-gear/images/x/${sha}.png`)).status === 200, 'still present after delete attempt');
-  assert.equal((await http(`/storage/v1/object/public/recommended-gear/images/x/${sha}.png`)).status, 200);
+  const del = await http(`/storage/v1/object/recommended-gear-images/images/x/${sha}.png`, { method: 'DELETE', token: publisher });
+  assert.ok(del.status >= 400 || (await http(`/storage/v1/object/public/recommended-gear-images/images/x/${sha}.png`)).status === 200, 'still present after delete attempt');
+  assert.equal((await http(`/storage/v1/object/public/recommended-gear-images/images/x/${sha}.png`)).status, 200);
 });
 
 test('review blocks Production when a referenced gear image is missing; Staging warns for non-gear hosts', async () => {

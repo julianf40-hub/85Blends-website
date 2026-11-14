@@ -396,9 +396,12 @@ GEAR_IMAGE_PUBLIC_BASE = "https://storage.example.invalid/recommended-gear/image
 # The local admin page (tools: node ../server.mjs --backend=local-supabase).
 GEAR_ALLOWED_ORIGINS = "http://127.0.0.1:4174,http://localhost:4174"
 # Short locally so the expiry test runs quickly; production uses 900 (15 minutes).
-GEAR_PRODUCTION_STEP_UP_SECONDS = "40"
 # New-style local secret key, injected at start by tools/start-local.sh (never committed).
+# Read only by the legacy demo function; gear-publish reads the window from gear_settings.
+GEAR_PRODUCTION_STEP_UP_SECONDS = "40"
 GEAR_PUBLISHER_SECRET_KEY = "env(GEAR_LOCAL_SECRET_KEY)"
+# The local publishable key, so the functions use the same key type a hosted project would.
+GEAR_PUBLIC_API_KEY = "env(GEAR_LOCAL_PUBLISHABLE_KEY)"
 GEAR_ALLOW_TEST_FAULTS = "local-only"
 
 [analytics]

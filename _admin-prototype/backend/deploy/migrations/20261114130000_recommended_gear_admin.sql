@@ -9,12 +9,12 @@
 --     replay and cleanup (service role);
 --   * the anon-readable current-catalog read RPC used by the gear-catalog endpoint;
 --   * immutable, content-addressed image uploads (insert-only Storage policies, single-use grants).
+-- Works the same on a fresh project and on the existing live project: it creates only new objects
+-- and never alters the existing recommended-gear bucket (see deploy/ROLLOUT.md).
 -- It deliberately contains NONE of the superseded Storage publication path: no leases, no write
 -- grants for catalog objects, no catalog Storage policies, no drift acknowledgements, no commit-guard
 -- trigger. Checked by tests/deploy_package.test.mjs.
 --
--- Idempotent where it touches existing platform objects: the bucket insert does nothing if the
--- bucket exists (the live project's bucket keeps its own settings).
 
 create schema if not exists private;
 revoke all on schema private from public;
@@ -245,6 +245,10 @@ create function public.gear_prepare_intent(p jsonb) returns jsonb
   language plpgsql security definer set search_path = '' as $$
 declare i private.gear_publish_intents;
 begin
+  if exists (select 1 from private.gear_retired_operations r where r.operation_id = (p ->> 'operation_id')::uuid)
+     or exists (select 1 from public.gear_catalog_publications c where c.operation_id = (p ->> 'operation_id')::uuid) then
+    raise exception 'operation_conflict: this operation ID was already used' using errcode = 'PT409';
+  end if;
   insert into private.gear_publish_intents (operation_id, target, user_id, request_digest, revision, published_at, document, digest,
     summary, expected_publication_id, draft_version, rollback_of, validator_version, expires_at)
   values ((p ->> 'operation_id')::uuid, p ->> 'target', (p ->> 'user_id')::uuid, p ->> 'request_digest', (p ->> 'revision')::uuid,
@@ -330,6 +334,16 @@ begin
   return private.gear_publication_result(v_pub, false);
 end $$;
 
+-- Retired operations: the binding of a pending operation that expired and was cleaned up.
+create table private.gear_retired_operations (
+  operation_id uuid primary key,
+  user_id uuid not null references auth.users (id),
+  target text not null check (target in ('staging', 'production')),
+  request_digest text not null,
+  retired_at timestamptz not null default clock_timestamp()
+);
+revoke all on private.gear_retired_operations from public, anon, authenticated;
+
 -- Operations: pending (intent) or committed (publication, append-only). Replays and cleanup.
 create function public.gear_find_operation(p_operation_id uuid) returns jsonb
   language sql stable security definer set search_path = '' as $$
@@ -339,7 +353,10 @@ create function public.gear_find_operation(p_operation_id uuid) returns jsonb
      from private.gear_publish_intents i where i.operation_id = p_operation_id),
     (select jsonb_build_object('operation_id', p.operation_id, 'target', p.target, 'user_id', p.published_by, 'request_digest', p.request_digest,
        'publication_id', p.id, 'state', 'committed')
-     from public.gear_catalog_publications p where p.operation_id = p_operation_id))
+     from public.gear_catalog_publications p where p.operation_id = p_operation_id),
+    (select jsonb_build_object('operation_id', r.operation_id, 'target', r.target, 'user_id', r.user_id, 'request_digest', r.request_digest,
+       'publication_id', null, 'state', 'retired')
+     from private.gear_retired_operations r where r.operation_id = p_operation_id))
 $$;
 
 create function public.gear_operation_result(p_operation_id uuid) returns jsonb
@@ -351,13 +368,20 @@ create function public.gear_cleanup_operations(p_pending_grace interval default 
   returns jsonb language plpgsql security definer set search_path = '' as $$
 declare v_pending integer; v_committed integer;
 begin
-  delete from private.gear_publish_intents i where i.publication_id is null and i.expires_at < clock_timestamp() - p_pending_grace;
+  -- Expired pending operations: keep the binding as a tombstone, drop the document.
+  with gone as (
+    delete from private.gear_publish_intents i where i.publication_id is null and i.expires_at < clock_timestamp() - p_pending_grace
+    returning i.operation_id, i.user_id, i.target, i.request_digest)
+  insert into private.gear_retired_operations (operation_id, user_id, target, request_digest)
+  select operation_id, user_id, target, request_digest from gone
+  on conflict (operation_id) do nothing;
   get diagnostics v_pending = row_count;
+  -- Committed operations: the append-only publication keeps operation_id + request_digest.
   delete from private.gear_publish_intents i where i.publication_id is not null and i.created_at < clock_timestamp() - p_committed_retention
     and exists (select 1 from public.gear_catalog_publications p where p.id = i.publication_id and p.operation_id = i.operation_id and p.request_digest is not null);
   get diagnostics v_committed = row_count;
   insert into public.gear_audit_log (actor, event, detail) values (null, 'operations_cleanup',
-    jsonb_build_object('pending_deleted', v_pending, 'committed_deleted', v_committed));
+    jsonb_build_object('pending_retired', v_pending, 'committed_deleted', v_committed));
   return jsonb_build_object('pendingDeleted', v_pending, 'committedDeleted', v_committed);
 end $$;
 
@@ -373,18 +397,17 @@ $$;
 create function public.gear_current_catalog(p_target text) returns table (document text, digest text, revision uuid, published_at bigint)
   language sql stable security definer set search_path = '' as $$
   select p.document, p.digest, p.revision, p.published_at
-  from public.gear_publication_head h join public.gear_catalog_publications p on p.id = h.current_publication_id
+  from public.gear_publication_head h join public.gear_catalog_publications p on p.id = h.current_publication_id and p.target = h.target
   where h.target = p_target
 $$;
 
 -- ---------------------------------------------------------------- images (immutable Storage objects)
--- The bucket holds images only. On an existing bucket (the live project's), this also removes
--- application/json from the allowed types, so the superseded catalog-v1.json path cannot be written
--- by ordinary uploads (the old CLI --upload included). Existing objects are not touched; key holders
--- can still change bucket settings (plan §5).
+-- Gear images get their OWN bucket. The existing recommended-gear bucket (old catalog objects, read
+-- by installed app builds and written by the current publisher) is never touched by this migration:
+-- not its settings, not its policies, not its objects. On a fresh project it simply does not exist.
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('recommended-gear', 'recommended-gear', true, 5242880, array['image/png', 'image/jpeg'])
-on conflict (id) do update set allowed_mime_types = excluded.allowed_mime_types;
+values ('recommended-gear-images', 'recommended-gear-images', true, 5242880, array['image/png', 'image/jpeg'])
+on conflict (id) do nothing;
 
 create table private.gear_image_grants (
   name text primary key check (name ~ '^images/[a-z0-9-]{1,64}/[a-f0-9]{64}\.(png|jpg)$'),
@@ -434,20 +457,20 @@ revoke all on function private.gear_image_write_allowed(text, jsonb, jsonb) from
 grant execute on function private.gear_image_write_allowed(text, jsonb, jsonb) to authenticated;
 
 create policy "gear images insert: aal2 admin with a single-use image grant" on storage.objects for insert to authenticated
-  with check (bucket_id = 'recommended-gear' and name ~ '^images/[a-z0-9-]{1,64}/[a-f0-9]{64}\.(png|jpg)$'
+  with check (bucket_id = 'recommended-gear-images' and name ~ '^images/[a-z0-9-]{1,64}/[a-f0-9]{64}\.(png|jpg)$'
               and private.gear_image_write_allowed(name, metadata, user_metadata));
 create policy "gear images read: aal2 admins" on storage.objects for select to authenticated
-  using (bucket_id = 'recommended-gear' and name like 'images/%' and private.gear_role() is not null);
+  using (bucket_id = 'recommended-gear-images' and name like 'images/%' and private.gear_role() is not null);
 
 create function public.gear_image_objects(p_names text[]) returns table (name text, size bigint, mimetype text, created_at timestamptz)
   language sql stable security definer set search_path = '' as $$
   select o.name, (o.metadata ->> 'size')::bigint, o.metadata ->> 'mimetype', o.created_at
-    from storage.objects o where o.bucket_id = 'recommended-gear' and o.name = any (p_names)
+    from storage.objects o where o.bucket_id = 'recommended-gear-images' and o.name = any (p_names)
 $$;
 create function public.gear_list_images() returns table (name text, size bigint, mimetype text, created_at timestamptz)
   language sql stable security definer set search_path = '' as $$
   select o.name, (o.metadata ->> 'size')::bigint, o.metadata ->> 'mimetype', o.created_at
-    from storage.objects o where o.bucket_id = 'recommended-gear' and o.name like 'images/%' order by o.created_at
+    from storage.objects o where o.bucket_id = 'recommended-gear-images' and o.name like 'images/%' order by o.created_at
 $$;
 
 -- ---------------------------------------------------------------- grants

@@ -108,14 +108,17 @@ export async function grantFor(target, ttl = 30, userId = USERS.publisher.id) {
 export function resetLocalDatabase({ legacyStoragePath = false } = {}) {
   Object.assign(ENV, JSON.parse(sh('supabase status -o json')));
   sh('supabase db reset');
-  sh(`node ${new URL('../tools/seed-images.mjs', import.meta.url).pathname}`); // fictional images, always from this checkout
   FN.name = 'gear-publish';
+  const seedImages = (bucket) => execSync(`node ${new URL('../tools/seed-images.mjs', import.meta.url).pathname}`, // fictional images, always from this checkout
+    { cwd: DIR, encoding: 'utf8', env: { GEAR_LOCAL_JWT_EXPIRY: '3600', ...process.env, GEAR_SEED_IMAGE_BUCKET: bucket } });
+  if (!legacyStoragePath) seedImages('recommended-gear-images');
   if (legacyStoragePath) {
     // Restores the superseded Storage publication path on the LOCAL stack only (not a migration).
     const dir = new URL('../supabase/experimental/legacy-storage-path/', import.meta.url);
     for (const f of readdirSync(dir).filter((n) => n.endsWith('.sql')).sort()) {
       execSync('docker exec -i supabase_db_gear-admin-local psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -q', { input: readFileSync(new URL(f, dir)), encoding: 'utf8' });
     }
+    seedImages('recommended-gear');
     FN.name = 'gear-legacy-storage-demo';
   }
 }

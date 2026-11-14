@@ -18,7 +18,9 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 let B = null; // backend adapter, chosen at boot from /config.json
-const supa = () => B?.mode === 'local-supabase';
+const supa = () => ['local-supabase', 'hosted-test'].includes(B?.mode);
+const hosted = () => B?.mode === 'hosted-test';
+const place = () => (hosted() ? 'Hosted test' : 'Local'); // 'Local' in local-supabase mode (wording unchanged)
 
 const S = {
   session: null,
@@ -74,7 +76,7 @@ async function boot() {
   try {
     B = await createBackend();
     renderBanner();
-    if (supa()) setPreviewBase(`${B.config.supabaseUrl}/storage/v1/object/public/recommended-gear/images/`);
+    if (supa()) setPreviewBase(`${B.config.supabaseUrl}/storage/v1/object/public/recommended-gear-images/images/`);
     S.session = await B.session();
   } catch (error) {
     $('#workspace').innerHTML = `<p class="error-block">Cannot reach the ${supa() ? 'local Supabase stack' : 'local prototype server'}: ${e(error.message)}</p>`;
@@ -90,7 +92,10 @@ async function boot() {
 
 function renderBanner() {
   const banner = $('#mode-banner');
-  if (supa()) {
+  if (B.mode === 'hosted-test') {
+    banner.className = 'sim-banner hosted-test';
+    banner.innerHTML = `<strong>HOSTED TEST PROJECT ${e(B.config.projectRef)}</strong> · NON-production · fictional or approved-for-public content only · ${e(B.config.supabaseUrl)}`;
+  } else if (supa()) {
     banner.className = 'sim-banner local-supabase';
     banner.innerHTML = `<strong>LOCAL SUPABASE MODE</strong> · real local sign-in and TOTP · fictional data · local stack only (${e(B.config.supabaseUrl)}) · not hosted, no live catalogs`;
   }
@@ -182,7 +187,9 @@ function renderSignedOut(message) {
     $('#workspace').innerHTML = `<section class="signin">
       <h1>Recommended Gear Admin <span class="sim-tag local">LOCAL SUPABASE</span></h1>
       ${message ? `<p class="error-block" role="alert">${e(message)}</p>` : ''}
-      <p>Sign in with a <strong>fictional local account</strong> (seeded into the local stack only). Real Supabase Auth runs on this machine; TOTP is required before anything loads. Nothing here reaches a hosted project.</p>
+      ${hosted()
+        ? `<p>Sign in with a <strong>fictional test account</strong> of the NON-production project <code>${e(B.config.projectRef)}</code>. TOTP is required before anything loads. Never use a production account here.</p>`
+        : '<p>Sign in with a <strong>fictional local account</strong> (seeded into the local stack only). Real Supabase Auth runs on this machine; TOTP is required before anything loads. Nothing here reaches a hosted project.</p>'}
       <form class="signin-form" data-form="sign-in">
         <label>Email <input type="email" name="email" autocomplete="username" required></label>
         <label>Password <input type="password" name="password" autocomplete="current-password" required></label>
@@ -559,7 +566,7 @@ function sidePreview() {
         <li>A web approximation of the <strong>iOS</strong> screens, written from the SwiftUI source (2.4.1 code on the iOS main branch). It is not a screenshot or a build of the app.</li>
         <li>Not reproduced: SF fonts and Dynamic Type metrics, exact spacing, bundled artwork (grey dashed boxes), eFlexFuel/RVP styling, VoiceOver, image download limits and fallback timing, carousel behaviour, and the app's offline/cache and ordering rules.</li>
         <li><strong>Android does not read this catalog yet.</strong> Nothing here represents Android; its future layout would be native Compose and is not designed.</li>
-        <li>Remote images load only from ${supa() ? 'the local stack\'s gear image bucket' : 'the simulated gear storage'}. Final check: an iOS TestFlight build with Staging selected.</li>
+        <li>Remote images load only from ${hosted() ? 'the test project\'s gear image bucket' : supa() ? 'the local stack\'s gear image bucket' : 'the simulated gear storage'}. Final check: an iOS TestFlight build with Staging selected.</li>
       </ul></div>`;
 }
 
@@ -658,7 +665,7 @@ function targetPanel(target) {
     <dl class="kv">
       <dt>Live revision</dt><dd>${live.head ? `<code>${e(live.head.revision)}</code>` : 'nothing published'}</dd>
       <dt>Published</dt><dd>${live.head ? e(formatTime(live.head.publishedAt)) : '—'}</dd>
-      <dt>Storage ${supa() ? '(local stack)' : '(simulated)'}</dt><dd>${storageMarkup(target, storage)}</dd>
+      <dt>Storage ${hosted() ? '(hosted test project)' : supa() ? '(local stack)' : '(simulated)'}</dt><dd>${storageMarkup(target, storage)}</dd>
       ${production ? `<dt>Previewed on Staging</dt><dd>${stagedVersion === S.base.version ? '✓ this draft version is live on Staging' : '<span class="warn-text">Not yet: publish this version to Staging and check it on a TestFlight build first</span>'}</dd>` : ''}
     </dl>
     <button type="button" data-action="review" data-target="${target}" ${dirty ? 'disabled' : ''}>Run server checks</button>
@@ -673,11 +680,11 @@ function targetPanel(target) {
         <input type="text" data-action="confirm-text" value="${e(S.confirmText)}" autocomplete="off" spellcheck="false"></label>` : ''}
     <ul class="requirements">${requirements.map(([ok, label]) => `<li class="${ok ? 'ok' : 'todo'}">${ok ? '✓' : '○'} ${e(label)}</li>`).join('')}</ul>
     <button type="button" class="${production ? 'danger' : 'primary'}" data-action="publish" data-target="${target}" ${ready ? '' : 'disabled'}>
-      ${supa() ? 'Publish' : 'Simulate publish'} to ${production ? 'Production' : 'Staging'}${production && supa() ? ' (local)' : ''}</button>
+      ${supa() ? 'Publish' : 'Simulate publish'} to ${production ? 'Production' : 'Staging'}${production && supa() ? ` (${hosted() ? 'test project' : 'local'})` : ''}</button>
     ${production && supa() ? `<p class="small muted">Production also needs a recent TOTP verification (the step-up window is set server-side). If it has lapsed you are asked for a fresh code; the function and Storage both check it.</p>` : ''}
     ${S.unknown?.[target] ? `<div class="result uncertain" role="status" data-testid="unknown-${target}"><strong>Outcome unknown.</strong> The request may or may not have been committed (${e(S.unknown[target].reason)}). Retrying sends the <em>same operation ID</em>, so it returns the original publication if there was one and never creates a second.
       <button type="button" data-action="retry-publish" data-target="${target}">Retry (same operation)</button></div>` : ''}
-    ${result ? `<div class="result ${['verified', 'committed'].includes(result.storage) ? '' : 'uncertain'}" role="status" data-testid="result-${target}"><strong>${result.storage === 'committed' ? `Local publication committed${result.replayed ? ' (replayed: an earlier attempt had already committed it)' : ''}` : `${supa() ? 'Local' : 'Simulated'} publication recorded${result.storage === 'verified' ? ' and verified' : ', upload NOT confirmed'}`}.</strong>
+    ${result ? `<div class="result ${['verified', 'committed'].includes(result.storage) ? '' : 'uncertain'}" role="status" data-testid="result-${target}"><strong>${result.storage === 'committed' ? `${place()} publication committed${result.replayed ? ' (replayed: an earlier attempt had already committed it)' : ''}` : `${supa() ? 'Local' : 'Simulated'} publication recorded${result.storage === 'verified' ? ' and verified' : ', upload NOT confirmed'}`}.</strong>
       <dl class="kv"><dt>Revision</dt><dd><code>${e(result.revision)}</code></dd><dt>publishedAt</dt><dd>${e(result.publishedAt)} (${e(formatTime(result.publishedAt))})</dd>
       <dt>SHA-256</dt><dd><code>${e(result.digest.slice(0, 16))}…</code> · ${e(result.bytes)} bytes</dd><dt>Storage</dt><dd>${e(result.storage)}</dd><dt>Read-back</dt><dd>${e(result.readBack)}</dd>
       <dt>Object</dt><dd>${e(result.objectPath)}</dd></dl></div>` : ''}
@@ -702,7 +709,7 @@ function storageMarkup(target, storage) {
 
 function sidePublish() {
   const intro = supa()
-    ? '<p class="info"><strong>Local Supabase stack.</strong> Publishing calls the local gear-publish function: review-digest check, stamp, validate, then <strong>one database transaction</strong> records the exact bytes and advances the target\'s pointer, only if nothing changed since your review. Apps read it from the read-only gear-catalog endpoint. Nothing reaches a hosted project, a CDN or any device.</p>'
+    ? (hosted() ? `<p class="info"><strong>Hosted NON-production project ${e(B.config.projectRef)}.</strong> ` : '<p class="info"><strong>Local Supabase stack.</strong> ') + 'Publishing calls the gear-publish function: review-digest check, stamp, validate, then <strong>one database transaction</strong> records the exact bytes and advances the target\'s pointer, only if nothing changed since your review. Apps read it from the read-only gear-catalog endpoint. ' + (hosted() ? 'This is the NON-production test project: production app builds never read it.</p>' : 'Nothing reaches a hosted project, a CDN or any device.</p>')
     : null;
   return `
     ${intro ?? `<p class="info"><strong>Simulated.</strong> Publishing runs the proposed server-side flow (reconcile Storage, lock, stamp, validate, record, upload, origin read-back) but writes only to <code>_admin-prototype/.local-state/</code>. Nothing reaches Supabase, a CDN or any device. Sign-in, roles and MFA are simulated. Use <em>Prototype tools</em> to inject crashes, uncertain uploads and writers that bypass the lock.</p>`}
@@ -881,7 +888,7 @@ async function publish(target, retryBody = null) {
     S.acknowledged = false;
     S.stagingPublicOK = false; // re-confirm for each saved version or publication
     S.confirmText = '';
-    toast(`${supa() ? 'Local' : 'Simulated'} ${target} publication: ${result.summary}`);
+    toast(`${supa() ? place() : 'Simulated'} ${target} publication: ${result.summary}`);
     await loadState();
   } catch (error) {
     if (error.data?.error === 'session_expired') return fail(error);

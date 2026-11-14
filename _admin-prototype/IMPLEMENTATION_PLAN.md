@@ -422,6 +422,44 @@ newer publication can be served an older complete one by a cache for at most `ma
   a bucket that still accepted JSON. The bucket is now images-only, so the old catalog path
   cannot be written by ordinary uploads.
 
+**Review round 2 (2026-11-14), before hosted testing:**
+- **Images moved to a separate bucket, `recommended-gear-images`.**
+  - The existing `recommended-gear` bucket (old catalog objects, installed builds, the current
+    `publish_catalog.py` publisher) is never altered by the migration: not its settings, policies
+    or objects. The earlier proposal to restrict it to images only was withdrawn.
+  - The app accepts any `https` image URL, so this needs no app change.
+  - `backend/deploy/ROLLOUT.md` separates a fresh-project setup from an existing-project rollout,
+    with preflight and postflight snapshots proving the old bucket is unchanged, and a
+    compatibility table for installed builds, updated builds and the current publisher.
+- **Independent review** of the package and the operation replay and cleanup paths (by a separate
+  agent given only the code and the requirements):
+  - **Fixed, should-fix:** cleanup now keeps a tombstone for each expired pending operation
+    (`private.gear_retired_operations`), so its ID stays bound to its publisher, environment and
+    content. A same-request retry gets `operation_expired`; any other use gets
+    `operation_conflict`. `gear_prepare_intent` refuses a retired or already-published ID.
+  - **Fixed, minor:**
+    - a committed Production operation is replayed even after the step-up window (identity is
+      still checked first);
+    - the step-up window has one source, `gear_settings`;
+    - the read RPC also checks the publication's target;
+    - the functions no longer say "LOCAL implementation";
+    - the functions use a configurable publishable key (`GEAR_PUBLIC_API_KEY`) instead of
+      depending on the legacy JWT anon key;
+    - cleanup scheduling ships as a separate, reviewed `ops/schedule-cleanup.sql`.
+  - **No blockers found.**
+- **Hosted mode** (prepared, not used):
+  - `server.mjs --backend=hosted-test` and `backend/tests/hosted/run-hosted-checks.mjs` both go
+    through one guard, `backend/tools/hosted-target.mjs`. It requires:
+    - an explicit project ref and the exact `https://<ref>.supabase.co` URL;
+    - the production refs to refuse (from the environment, never committed);
+    - a typed confirmation and a publishable key;
+    - no privileged key in the environment.
+  - The hosted harness never resets, seeds, runs SQL or uses a service key. It is read-only unless
+    Staging writes are explicitly enabled, and never publishes to Production.
+  - The functions answer CORS preflights themselves. `backend/tests/cors.test.mjs` goes directly
+    to the function runtime, bypassing local Kong, which otherwise answers preflights and would
+    hide a function that can't.
+
 **App impact:**
 - **iOS:** the smallest change is the two paths in `GearCatalogSource.objectPath` plus their test
   literals. Installed builds that read the Storage paths keep bundled or last-accepted content
@@ -737,7 +775,7 @@ creates, changes or uses a live credential.
 | D1 | Alert delivery for the verifier and incidents | Email, push, or another channel | Production launch |
 | D2 | Far-future incident recovery | Restore the previous bytes, a forward-stamped correction, or an app change capping accepted skew (default stays block and report) | Production launch |
 | D3 | Admin URL and deploy method | `<project>.pages.dev` with Access (no DNS change) vs a custom hostname (DNS change); Cloudflare Git integration vs a direct upload with a Pages-only token | Hosting the frontend |
-| D4 | Hosted non-production environment for tier B's hosted-only checks | **Recommended:** a new Free-plan project in a separate organization ($0/month; pauses after 1 week idle). Steps in `docs/proposals/hosted-nonprod-environment.md`. Not created | Backend staging, hosted part |
+| D4 | Hosted non-production environment for tier B's hosted-only checks | A new Free-plan project ($0) **if** Julian confirms the free slot. Verified read-only: one active free project, plus one paused that doesn't count. The quota is per user across organizations, so a new organization does not add one. Otherwise a separate Pro organization (from $25/month). Branching is unavailable on Free. Steps in `docs/proposals/hosted-nonprod-environment.md`. Not created | Backend staging, hosted part |
 | D5 | Production step-up window and JWT lifetime | Proposed 900 s step-up and a short access-token expiry (revocation is function-only, §4). Measured locally: PostgREST accepts an expired JWT for about 30 s after `exp` (refused from +32 s), and a revoked but unexpired JWT until then | Production launch |
 | D6 | HEIF uploads | Stay disabled until a server-side decoder and dimension checks exist | Optional |
 | D7 | Future-timestamp warning in `validate_catalog.py` | Separate iOS tooling PR (`docs/proposals/validator-future-timestamp.md`) | Optional |
