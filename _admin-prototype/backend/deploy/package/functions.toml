@@ -1,0 +1,7 @@
+# Per-function gateway settings for the deployment (copy into the target project's supabase/config.toml).
+[functions.gear-publish]
+verify_jwt = true
+
+# Public read-only catalog endpoint: guests and app users, no sign-in.
+[functions.gear-catalog]
+verify_jwt = false

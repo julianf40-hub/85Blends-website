@@ -1,0 +1,14 @@
+{
+  "description": "Recommended Gear admin deployment package (D10 option 2). Built by tools/build-deploy-package.mjs.",
+  "files": {
+    "functions.toml": "ab4c01b14529266107a887e6031d09ba8bc9646000e8480d109bc6df23c3240c",
+    "functions/_shared/diff.mjs": "e4734630b340b05e73661023ec014273e44b7570765c4d6d5636ef22daac4352",
+    "functions/_shared/validator.mjs": "fe880cd20685124f2ba0051bea31028308d81f9c88d662306067029b0aff46a6",
+    "functions/gear-catalog/index.ts": "b783ba91752d8484e126e4c96bf24a0730e54f71afc1719951e97d4ac8021ca6",
+    "functions/gear-publish/index.ts": "92a937232186f036b339a59625f227adce2fa1fc5df01616c7b401985a9493fb",
+    "migrations/20261114130000_recommended_gear_admin.sql": "a29938cd49ad80227ca710b5ea8ff4c1eac2755aa953c7b6b693b24e3de3c55d",
+    "ops/schedule-cleanup.sql": "81f80ce4f3276f64ed2fc680149d6cdfbb9dac9e67a770693d3f4b01593beb0f",
+    "README.md": "77c2bee8118f51d92552938f7d1142b2d408c878f31026c0b416038b30eef7ff",
+    "ROLLOUT.md": "405f26a3d9fb65240f668128a71fbb5d46c2bd1ff57d0c21ed8c05c50d99e97a"
+  }
+}

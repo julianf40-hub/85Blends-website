@@ -1,0 +1,327 @@
+From b726550eb4077bf9dc5feb513ec995fbb7c2759d Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 14 Nov 2026 00:42:11 +0000
+Subject: [PATCH] Recommended Gear: read the catalog from the gear-catalog
+ endpoint
+
+The catalog is now published through one database transaction and served by the public, read-only
+gear-catalog endpoint (backend decision D10). Only the two source paths change; the JSON contract,
+fetching, ETag/304 handling, ordering rules and saved state are unchanged, so an updated install
+keeps what it already accepted.
+
+- GearCatalogSource.objectPath: functions/v1/gear-catalog/{production,staging}
+- GearCatalogTests: expected endpoint literals updated
+- GearCatalogEndpointTests: URL construction for both sources and all SUPABASE_URL shapes;
+  a catalog accepted from the old Storage path kept and revalidated; strong and weak ETags
+  with 304; no credentials sent; delayed older responses rejected; 404/503 never clear content
+
+Not yet run on Xcode (no Mac attached to the session that prepared it).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018DNHAJTTjqfVki8TAe82zj
+---
+ .../GearCatalogEndpointTests.swift            | 213 ++++++++++++++++++
+ .../GearCatalogTests.swift                    |  12 +-
+ EightyFiveBlends/GearCatalog.swift            |  15 +-
+ 3 files changed, 227 insertions(+), 13 deletions(-)
+ create mode 100644 EightyFiveBlends.xcodeproj/EightyFiveBlendsTests/GearCatalogEndpointTests.swift
+
+diff --git a/EightyFiveBlends.xcodeproj/EightyFiveBlendsTests/GearCatalogEndpointTests.swift b/EightyFiveBlends.xcodeproj/EightyFiveBlendsTests/GearCatalogEndpointTests.swift
+new file mode 100644
+index 0000000..2864af5
+--- /dev/null
++++ b/EightyFiveBlends.xcodeproj/EightyFiveBlendsTests/GearCatalogEndpointTests.swift
+@@ -0,0 +1,213 @@
++//
++//  GearCatalogEndpointTests.swift
++//  EightyFiveBlendsTests
++//
++//  The move from the Storage objects to the read-only gear-catalog endpoint (backend decision D10):
++//  URL construction for both sources, a catalog accepted from the old path surviving the update,
++//  the endpoint's SHA-256 ETags (strong and gateway-weakened) with 304, delayed older responses,
++//  and 404/503 never clearing what the app shows. Runs the real GearCatalogStore with an injected
++//  fetch and a private UserDefaults suite; no network.
++//
++
++import Foundation
++import Testing
++@testable import EightyFiveBlends
++
++@MainActor
++struct GearCatalogEndpointTests {
++
++    // MARK: - Fixtures
++
++    private nonisolated static let project = URL(string: "https://example.supabase.co/rest/v1/")!
++    private nonisolated static let oldStorageURL = URL(string: "https://example.supabase.co/storage/v1/object/public/recommended-gear/catalog-v1.json")!
++    private nonisolated static let endpointURL = URL(string: "https://example.supabase.co/functions/v1/gear-catalog/production")!
++
++    private static func document(revision: String, publishedAt: Double, name: String = "Endpoint Brand") -> Data {
++        let brand: [String: Any] = [
++            "id": "endpoint-brand", "kind": "brand", "name": name, "tagline": "Tools",
++            "description": "Product details", "ctaTitle": "View products", "destinationURL": "https://example.com/products",
++        ]
++        let object: [String: Any] = ["schemaVersion": 1, "revision": revision, "publishedAt": publishedAt, "brands": [brand]]
++        return try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
++    }
++
++    /// Records requests and returns queued replies.
++    private final class Server {
++        var replies: [(status: Int, body: Data, headers: [String: String])] = []
++        var requests: [URLRequest] = []
++
++        func fetch(_ request: URLRequest) async throws -> (Data, URLResponse) {
++            requests.append(request)
++            guard !replies.isEmpty else { throw URLError(.notConnectedToInternet) }
++            let reply = replies.removeFirst()
++            return (reply.body, HTTPURLResponse(url: request.url!, statusCode: reply.status, httpVersion: "HTTP/1.1", headerFields: reply.headers)!)
++        }
++    }
++
++    private struct Harness {
++        let suite = "GearCatalogEndpointTests.\(UUID().uuidString)"
++        let defaults: UserDefaults
++        let server = Server()
++
++        init() throws { defaults = try #require(UserDefaults(suiteName: suite)) }
++
++        @MainActor
++        func makeStore(_ endpoint: URL) -> GearCatalogStore {
++            let server = self.server
++            return GearCatalogStore(defaults: defaults, endpoints: [.production: endpoint],
++                                    fetch: { try await server.fetch($0) },
++                                    now: { Date(timeIntervalSince1970: 1_800_000_000) },
++                                    sleep: { _ in throw CancellationError() },
++                                    observesApplication: false)
++        }
++
++        func tearDown() { defaults.removePersistentDomain(forName: suite) }
++    }
++
++    private static func ifNoneMatch(_ server: Server) -> String? {
++        server.requests.last?.value(forHTTPHeaderField: "If-None-Match")
++    }
++
++    // MARK: - URL construction
++
++    @Test(arguments: [
++        "https://example.supabase.co/rest/v1/",
++        "https://example.supabase.co/rest/v1",
++        "https://example.supabase.co/",
++        "https://example.supabase.co"
++    ])
++    func bothSourcesUseTheGearCatalogEndpoint(configured: String) throws {
++        let base = try #require(URL(string: configured))
++        #expect(GearCatalogStore.storageObjectURL(from: base, objectPath: GearCatalogSource.production.objectPath).absoluteString
++                == "https://example.supabase.co/functions/v1/gear-catalog/production")
++        #expect(GearCatalogStore.storageObjectURL(from: base, objectPath: GearCatalogSource.staging.objectPath).absoluteString
++                == "https://example.supabase.co/functions/v1/gear-catalog/staging")
++    }
++
++    @Test func noSourceStillPointsAtTheOldStorageObjects() {
++        for source in GearCatalogSource.allCases {
++            #expect(!source.objectPath.contains("storage/v1"))
++            #expect(!source.objectPath.contains("catalog-v1.json"))
++        }
++    }
++
++    // MARK: - Retained cache across the update
++
++    @Test func aCatalogAcceptedFromTheOldPathIsKeptAndRevalidatedAgainstTheEndpoint() async throws {
++        let harness = try Harness()
++        defer { harness.tearDown() }
++        let r1 = Self.document(revision: "r1", publishedAt: 1_800_000_000)
++
++        // Before the update: accepted from the Storage object, with Storage's ETag.
++        let before = harness.makeStore(Self.oldStorageURL)
++        harness.server.replies = [(200, r1, ["ETag": "\"storage-etag\""])]
++        #expect(await before.refresh(force: true) == .updated)
++
++        // After the update (same UserDefaults): shown immediately from the saved copy, before any request.
++        let after = harness.makeStore(Self.endpointURL)
++        #expect(after.source == .published)
++        #expect(after.catalog?.revision == "r1")
++
++        // First request to the endpoint sends the old ETag; the endpoint answers 200 with the same
++        // bytes and its own SHA-256 ETag: nothing visible changes, and the new ETag is kept.
++        harness.server.replies = [(200, r1, ["ETag": "\"5a1b-sha256\""]), (304, Data(), [:])]
++        let generation = after.generation
++        #expect(await after.refresh(force: true) == .unchanged)
++        #expect(harness.server.requests.last?.url == Self.endpointURL)
++        #expect(Self.ifNoneMatch(harness.server) == "\"storage-etag\"")
++        #expect(after.generation == generation)
++        #expect(await after.refresh(force: true) == .notModified)
++        #expect(Self.ifNoneMatch(harness.server) == "\"5a1b-sha256\"")
++        #expect(after.catalog?.revision == "r1")
++    }
++
++    @Test func orderingStateSurvivesTheUpdate() async throws {
++        let harness = try Harness()
++        defer { harness.tearDown() }
++        let before = harness.makeStore(Self.oldStorageURL)
++        harness.server.replies = [(200, Self.document(revision: "r2", publishedAt: 1_800_000_200), [:])]
++        #expect(await before.refresh(force: true) == .updated)
++
++        // The endpoint (or a cache in front of it) serves something older than what was accepted.
++        let after = harness.makeStore(Self.endpointURL)
++        harness.server.replies = [(200, Self.document(revision: "r1", publishedAt: 1_800_000_100), ["ETag": "\"old\""])]
++        #expect(await after.refresh(force: true) == .rejected(.stale))
++        #expect(after.catalog?.revision == "r2")
++    }
++
++    // MARK: - ETags and 304
++
++    @Test func aGatewayWeakenedETagIsSentBackAsReceivedAnd304KeepsContent() async throws {
++        let harness = try Harness()
++        defer { harness.tearDown() }
++        let store = harness.makeStore(Self.endpointURL)
++        harness.server.replies = [(200, Self.document(revision: "r1", publishedAt: 1_800_000_000), ["ETag": "W/\"abc123\""]),
++                                  (304, Data(), ["ETag": "W/\"abc123\""])]
++        #expect(await store.refresh(force: true) == .updated)
++        #expect(harness.server.requests.first?.value(forHTTPHeaderField: "If-None-Match") == nil)
++        #expect(await store.refresh(force: true) == .notModified)
++        #expect(Self.ifNoneMatch(harness.server) == "W/\"abc123\"")
++        #expect(store.catalog?.revision == "r1")
++    }
++
++    @Test func requestsCarryNoCredentials() async throws {
++        let harness = try Harness()
++        defer { harness.tearDown() }
++        let store = harness.makeStore(Self.endpointURL)
++        harness.server.replies = [(200, Self.document(revision: "r1", publishedAt: 1_800_000_000), [:])]
++        _ = await store.refresh(force: true)
++        let request = try #require(harness.server.requests.last)
++        #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
++        #expect(request.value(forHTTPHeaderField: "apikey") == nil)
++        #expect(request.value(forHTTPHeaderField: "Accept") == "application/json")
++    }
++
++    // MARK: - Delayed responses
++
++    @Test func aDelayedOlderPublicationNeverReplacesANewerOne() async throws {
++        let harness = try Harness()
++        defer { harness.tearDown() }
++        let store = harness.makeStore(Self.endpointURL)
++        let v1 = Self.document(revision: "v1", publishedAt: 1_800_000_100, name: "First")
++        let v2 = Self.document(revision: "v2", publishedAt: 1_800_000_200, name: "Second")
++        let rollback = Self.document(revision: "v3", publishedAt: 1_800_000_300, name: "First")
++        harness.server.replies = [(200, v2, ["ETag": "\"v2\""]), (200, v1, ["ETag": "\"v1\""]), (200, rollback, ["ETag": "\"v3\""])]
++        #expect(await store.refresh(force: true) == .updated)
++        #expect(await store.refresh(force: true) == .rejected(.stale))   // v1 arrives late (a cache, a slow edge)
++        #expect(store.catalog?.revision == "v2")
++        #expect(await store.refresh(force: true) == .updated)           // a rollback is a new, newer publication
++        #expect(Self.ifNoneMatch(harness.server) == "\"v2\"")          // the rejected v1 response did not replace the ETag
++        #expect(store.catalog?.revision == "v3")
++    }
++
++    // MARK: - 404 and 503
++
++    @Test func notPublishedAndServerErrorsNeverClearAPublishedCatalog() async throws {
++        let harness = try Harness()
++        defer { harness.tearDown() }
++        let store = harness.makeStore(Self.endpointURL)
++        harness.server.replies = [(200, Self.document(revision: "r1", publishedAt: 1_800_000_000), ["ETag": "\"r1\""]),
++                                  (404, Data("{\"error\":\"not_published\"}".utf8), [:]),
++                                  (503, Data("{\"error\":\"unavailable\"}".utf8), ["Cache-Control": "no-store"])]
++        #expect(await store.refresh(force: true) == .updated)
++        #expect(await store.refresh(force: true) == .httpStatus(404))
++        #expect(await store.refresh(force: true) == .httpStatus(503))
++        #expect(store.source == .published)
++        #expect(store.catalog?.revision == "r1")
++        // Still kept after a relaunch.
++        let relaunched = harness.makeStore(Self.endpointURL)
++        #expect(relaunched.catalog?.revision == "r1")
++    }
++
++    @Test func beforeTheFirstPublicationProductionKeepsBundledContent() async throws {
++        let harness = try Harness()
++        defer { harness.tearDown() }
++        let store = harness.makeStore(Self.endpointURL)
++        let bundled = store.content.pages.map(\.id)
++        harness.server.replies = [(404, Data("{\"error\":\"not_published\"}".utf8), [:]), (503, Data(), [:])]
++        #expect(await store.refresh(force: true) == .httpStatus(404))
++        #expect(await store.refresh(force: true) == .httpStatus(503))
++        #expect(store.source == .bundled)
++        #expect(store.content.pages.map(\.id) == bundled)
++    }
++}
+diff --git a/EightyFiveBlends.xcodeproj/EightyFiveBlendsTests/GearCatalogTests.swift b/EightyFiveBlends.xcodeproj/EightyFiveBlendsTests/GearCatalogTests.swift
+index ed5bf89..42c982d 100644
+--- a/EightyFiveBlends.xcodeproj/EightyFiveBlendsTests/GearCatalogTests.swift
++++ b/EightyFiveBlends.xcodeproj/EightyFiveBlendsTests/GearCatalogTests.swift
+@@ -217,24 +217,24 @@ struct GearCatalogTests {
+     // MARK: - Endpoint
+ 
+     /// Regression: SUPABASE_URL is the PostgREST URL (`.../rest/v1/`). The catalog must be read from
+-    /// the project root's Storage path for every configured shape. Expected values are literals,
+-    /// not recomputed with the method under test.
++    /// the project root's gear-catalog endpoint for every configured shape. Expected values are
++    /// literals, not recomputed with the method under test.
+     @Test(arguments: [
+         "https://<project-ref>.supabase.co/rest/v1/",
+         "https://<project-ref>.supabase.co/rest/v1",
+         "https://<project-ref>.supabase.co/",
+         "https://<project-ref>.supabase.co"
+     ])
+-    func productionCatalogURLIsTheStorageObjectForEverySupabaseURLShape(configured: String) throws {
++    func productionCatalogURLIsTheCatalogEndpointForEverySupabaseURLShape(configured: String) throws {
+         let url = GearCatalogStore.storageObjectURL(from: try #require(URL(string: configured)),
+                                                     objectPath: GearCatalogSource.production.objectPath)
+-        #expect(url.absoluteString == "https://<project-ref>.supabase.co/storage/v1/object/public/recommended-gear/catalog-v1.json")
++        #expect(url.absoluteString == "https://<project-ref>.supabase.co/functions/v1/gear-catalog/production")
+     }
+ 
+-    @Test func stagingCatalogURLIsTheStagingStorageObject() throws {
++    @Test func stagingCatalogURLIsTheStagingCatalogEndpoint() throws {
+         let url = GearCatalogStore.storageObjectURL(from: try #require(URL(string: "https://<project-ref>.supabase.co/rest/v1/")),
+                                                     objectPath: GearCatalogSource.staging.objectPath)
+-        #expect(url.absoluteString == "https://<project-ref>.supabase.co/storage/v1/object/public/recommended-gear/staging/catalog-v1.json")
++        #expect(url.absoluteString == "https://<project-ref>.supabase.co/functions/v1/gear-catalog/staging")
+     }
+ 
+     // MARK: - Lifecycle: bundled, published, empty, unreadable
+diff --git a/EightyFiveBlends/GearCatalog.swift b/EightyFiveBlends/GearCatalog.swift
+index 096d1fd..6be3ea3 100644
+--- a/EightyFiveBlends/GearCatalog.swift
++++ b/EightyFiveBlends/GearCatalog.swift
+@@ -2,8 +2,8 @@
+ //  GearCatalog.swift
+ //  EightyFiveBlends
+ //
+-//  Remote Recommended Gear content (2.4.1). One versioned JSON document, published to public
+-//  Supabase Storage, drives BOTH the Recommended Gear carousel and the More screen's partner
++//  Remote Recommended Gear content (2.4.1). One versioned JSON document, served by the public
++//  gear-catalog endpoint, drives BOTH the Recommended Gear carousel and the More screen's partner
+ //  placements, so a partner removed or hidden in one place cannot linger in the other.
+ //
+ //  The wire format is shared with the Android client and documented in docs/remote-gear/README.md
+@@ -510,8 +510,8 @@ extension GearCatalog {
+ 
+ // MARK: - Catalog sources
+ 
+-/// Where the catalog is read from. Both sources serve the same v1 JSON contract from the same
+-/// public bucket, read without credentials. `.staging` is compiled into every build but can only
++/// Where the catalog is read from. Both sources serve the same v1 JSON contract from the public,
++/// read-only gear-catalog endpoint (the current publication in the database), read without credentials. `.staging` is compiled into every build but can only
+ /// become active where `GearCatalogStore.previewEligibility` is `.eligible` (TestFlight, Xcode and
+ /// Debug builds); everywhere else the store stays on `.production`.
+ enum GearCatalogSource: String, CaseIterable, Sendable {
+@@ -520,11 +520,12 @@ enum GearCatalogSource: String, CaseIterable, Sendable {
+     /// content, so nothing on screen can be mistaken for staging data.
+     case staging
+ 
+-    /// Public object path, relative to the Supabase project URL.
++    /// Public endpoint path, relative to the Supabase project URL. The old Storage objects
++    /// (`storage/v1/object/public/recommended-gear/…catalog-v1.json`) are no longer published to.
+     var objectPath: String {
+         switch self {
+-        case .production: return "storage/v1/object/public/recommended-gear/catalog-v1.json"
+-        case .staging: return "storage/v1/object/public/recommended-gear/staging/catalog-v1.json"
++        case .production: return "functions/v1/gear-catalog/production"
++        case .staging: return "functions/v1/gear-catalog/staging"
+         }
+     }
+ 
+-- 
+2.43.0
+

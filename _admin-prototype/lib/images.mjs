@@ -12,10 +12,16 @@ export function storageImageKey(url) {
   return match ? { brand: match[1], file: match[2] } : null;
 }
 
+// Simulated mode serves images from the prototype server (/images/<sha>.<ext>). Local-supabase mode
+// maps the same canonical names onto the LOCAL stack's public bucket.
+let previewBase = null;
+export function setPreviewBase(base) { previewBase = base; }
+
 /** Local preview source for a catalog image URL, or null if the prototype must not load it. */
 export function previewSource(url) {
   const key = storageImageKey(url);
-  return key ? `/images/${key.file}` : null;
+  if (!key) return null;
+  return previewBase ? `${previewBase}${key.brand}/${key.file}` : `/images/${key.file}`;
 }
 
 export function imageReferences(catalog) {

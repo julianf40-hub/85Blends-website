@@ -148,7 +148,7 @@ Implemented and tested in the local backend (`_admin-prototype/backend/` on bran
 | Guarantee | Verified independently by the database? | How |
 |---|---|---|
 | Reading admin data and saving drafts requires `aal2` | **Yes** | PostgREST verifies the JWT signature; RLS and `save_gear_draft` read `aal` from `auth.jwt()` |
-| A catalog object in Storage can only be written by the publisher with `aal2` | **Yes** | The Storage API verifies the caller's JWT; the `storage.objects` RLS policy calls `private.gear_role()` at commit |
+| A catalog object in Storage can only be written by the publisher with `aal2` | **Yes** | The Storage API verifies the caller's JWT; the `storage.objects` RLS policy calls `private.gear_role()` in Storage's pre-upload permission check (a rolled-back dry run, see §6), plus a single-use write grant bound to that user |
 | Production object writes need a TOTP verification within the step-up window | **Yes** | The same policy checks the `amr` TOTP timestamp against `gear_settings.production_step_up_seconds` |
 | The session has not been revoked or signed out | **No** (function only) | PostgREST and Storage check the signature and expiry, not session revocation. Only the function's Auth check sees a sign-out, so a revoked token stays valid at the database until it expires (keep JWT expiry short) |
 | The caller is the pinned publisher ID | **Partly** | The function checks the pinned ID. The database independently allows only one publisher row and checks that role |
@@ -179,11 +179,19 @@ equally powerful defaults. The real containment is therefore:
 - the verifier (§6) watches Storage;
 - **keys are minimized and revocation is verified** (§12, production launch).
 
-If stronger isolation is ever required, the only real options are a separate Supabase project for
-the catalog (the apps read `SUPABASE_URL`, so that is an iOS change, and future Android work) or
-signed catalogs (also an app change).
+If stronger isolation is ever required, the options are a separate Supabase project for the
+catalog (the apps read `SUPABASE_URL`, so that is an iOS change, and future Android work) and
+signed catalogs (also an app change). Signatures **authenticate** content; they do **not** stop an
+older, validly signed publication from overwriting a newer object (§6.1).
 
 ## 6. Publishing across the database and Storage
+
+> **Superseded by §6.2 (decision D10, option 2, 2026-11-14).** The current design publishes through
+> one database transaction and a read-only endpoint; nothing writes the catalog to Storage. The text
+> below and §6.1 describe the earlier Storage path and the blocker that ruled it out. That path is
+> kept only as local experimental evidence (`backend/supabase/experimental/legacy-storage-path/`,
+> `backend/supabase/functions/gear-legacy-storage-demo/`, `backend/tests/legacy-storage/`) and is
+> excluded from the migration and deployment path.
 
 A database lock or fencing token alone does **not** stop a stale process from overwriting Storage.
 The local backend shows this with a negative control. When uploads used the service key (which
@@ -197,15 +205,270 @@ The implemented design:
    expires. Every database write (record, status, acknowledgement) must present the live token.
 2. **Capture the object version first** (`gear_prepare_write`), then read the authenticated
    origin (never the CDN) and classify it.
-3. **Storage enforces fencing and compare-and-swap.** The function uploads with the **publisher's
-   own verified JWT**, not a service key, and puts the lease token in the object's user metadata.
-   `storage.objects` RLS, evaluated when Storage commits the object row, requires:
+3. **Storage enforces fencing and compare-and-swap when an upload starts.** The function uploads
+   with the **publisher's own verified JWT**, not a service key. Under the lease it issues a
+   **single-use write grant** (`private.gear_write_grants`) bound to the target, the object path,
+   the prepared publication, the publisher's user ID and the declared byte size, and puts only the
+   grant's nonce in the object's user metadata. The lease token itself is never readable by
+   clients (column grants hide it). `storage.objects` RLS requires:
    - publisher plus `aal2`;
-   - the live, unexpired lease token;
+   - a live grant for this exact path, issued to this user, with the declared `contentLength`
+     equal to the granted size, under the live, unexpired lease;
    - for an update, the existing object version equal to the version captured in step 2;
    - for Production, a recent TOTP.
 
-   A rejected upload leaves the served object unchanged.
+   The grant is consumed after every attempt. A rejected upload leaves the served object unchanged.
+
+   **Correction (bypass review at `f7d2a3c`):** an earlier version of this plan said RLS is
+   "evaluated when Storage commits the object row". It is not. The Storage API (`storage-api`
+   v1.72.1 locally) runs RLS in `canUpload()` as a **rolled-back dry run before the bytes arrive**,
+   seeing only the declared metadata (`mimetype`, `contentLength`); the final row is then written
+   as a superuser without RLS. So:
+   - **RLS cannot bind content.** It binds who, where, when, which lease/publication and the
+     declared size, not the bytes;
+   - the fencing and compare-and-swap checks are **check-then-act**: they hold when an upload
+     starts, not when it commits. **This is a blocker, not a bounded window** (§6.1): the
+     publication-safety review reproduced a publisher overwriting a newer verified publication
+     after its lease expired, and two simultaneous requests both using one grant. The function's
+     lease-margin check only stops it *starting* late; it cannot stop a started upload from
+     committing late, and it is not a protection.
+
+   Also found at `f7d2a3c` and fixed: the publisher could read `lease_token` over REST and upload
+   arbitrary bytes directly. Now the token is hidden, writes need a grant, and expired, released,
+   replayed, cross-environment, cross-path, wrong-size, wrong-user and role-changed grants are
+   refused (backend `tests/bypass.test.mjs`, B1–B9).
+
+   **Still enforced only by the function** without the candidate commit guard (§6.1); with it,
+   size, content and ordering are re-checked at commit (B9 now refused locally):
+   full v1 validation, the successor and ordering checks, partner approvals, image checks,
+   byte-equality with the recorded publication, the Production confirmation and review digest,
+   and session revocation.
+### 6.1 Publication-safety review at `ba3cfab` (local; blocker found; candidate fix)
+
+Reproduced exactly as requested (`backend/tests/publication_safety.test.mjs`; evidence in the
+backend README):
+
+| # | Scenario | Without a commit-time check | With the candidate commit guard |
+|---|---|---|---|
+| PS1a | A pauses mid-body, lease expires, B reconciles, publishes and verifies, A resumes; **through the local gateway** | Safe, **but only because local Kong buffers the whole body**, so Storage authorizes after the pause (A refused at authorization) | Safe |
+| PS1b | Same, with Storage receiving a streamed body (authorized on the headers, as Storage itself does) | **Unsafe:** Storage serves A's **older** document while the head says B. A's function returns `lease_lost`, which does not tell its operator that A's bytes landed. Detected as drift afterwards | **Safe:** A refused at commit; Storage serves B; `in_sync` |
+| PS2 | Two simultaneous requests with one grant | **Both succeed** (via the gateway and direct). Consumption ran only afterwards, in the function; nothing persists in the rolled-back dry run | **Exactly one succeeds** (10 alternating rounds plus 2 single runs); the grant is deleted in the committing transaction |
+
+**Blocker:** Storage authorizes before the body and commits as a superuser with no RLS and no
+version condition (`storage-api` `Uploader.completeUpload`: `upsertObject`, `ON CONFLICT DO
+UPDATE`). A lease, fencing token, RLS policy or timing margin checked *before* the body cannot
+order commits. Whether hosted Storage authorizes on the headers depends on whether the hosted
+gateway streams request bodies; local Kong buffers. That must not be relied on either way.
+
+**Alternatives (none is a timing margin):**
+1. **Commit-time guard trigger on `storage.objects`** (candidate, implemented locally:
+   `migrations/20261113220000_gear_commit_guard.sql`). It is a BEFORE INSERT/UPDATE trigger, so
+   it runs inside Storage's committing transaction (superuser writes do not bypass triggers),
+   under Storage's per-object lock. It consumes the grant atomically (`DELETE … RETURNING`) and
+   re-checks the live lease, the uploader, compare-and-swap against the prepared version, the
+   **stored** size, and the stored eTag against the MD5 of the recorded publication. It decides
+   on the proposed row in the INSERT phase, because an overwrite that omits `user_metadata`
+   keeps the old row's value. Key-holder writes (no grant nonce) are not blocked: they remain
+   detected drift. **Depends on hosted facts not yet verified:**
+   - that a project can create, replace and remove such a trigger (`storage.objects` is owned by
+     `supabase_storage_admin`; locally `postgres` holds TRIGGER but cannot disable it);
+   - that hosted Storage still writes through this upsert path;
+   - that the hosted eTag is the MD5 of the bytes (not true for S3 multipart or some encryption
+     modes);
+   - that TUS and S3-protocol uploads reach the same trigger (they write the same table, but this
+     is untested).
+
+   It also couples correctness to Storage internals, which can change between versions.
+2. **The database is the source of truth for "latest":** apps read the latest verified
+   publication from the database (an Edge Function or a PostgREST RPC, cacheable). Storage keeps
+   immutable, content-addressed publication files that are never overwritten (insert-only,
+   which is already enforced for images). Commit order is then a database transaction. This is
+   an app change (iOS, and future Android) and a caching design.
+3. **Immutable per-revision objects plus a small pointer object.** This only moves the
+   overwrite problem to the pointer, unless the pointer is guarded by 1 or served by 2.
+4. **Signed catalogs plus monotonic acceptance on clients.** Signatures authenticate content
+   but **do not** stop an older valid signed publication from overwriting a newer object.
+   Clients that already hold the newer document reject the older one by `publishedAt` (the
+   existing v1 rule), but new installs and cold caches accept it. This limits device impact
+   only; the served bytes are still wrong.
+
+**Decided (2026-11-14): option 2**, implemented locally in §6.2. The commit-guard trigger (option 1)
+remains experimental evidence only and is not in the migration path.
+
+### 6.2 Current design: the database is the publication channel (D10, option 2; local)
+
+**Write path:** one application-owned database transaction.
+1. The admin reviews (`review`): the server returns a `reviewDigest`. It covers the target, the
+   draft version or rollback source, the current publication (id and digest) as the baseline,
+   the candidate brands, and (Production) the approvals.
+2. Publish sends that digest and an `operationId` (a UUID the client keeps for retries).
+   `gear-publish` then:
+   - checks the caller (Auth session, aal2, publisher, pinned ID, Production step-up);
+   - recomputes the review (any difference → `review_stale`);
+   - stamps `publishedAt = max(now, current + 1)` (±300 s guard), validates and successor-checks
+     the exact bytes;
+   - stores them as a private **intent** (`private.gear_publish_intents`, service-written),
+     together with their SHA-256, the reviewed draft version (or rollback source) and the
+     pointer the review saw.
+3. `gear_commit_publication(operationId)` runs **with the publisher's own JWT**. In one
+   transaction, under a row lock on the target's head, the database itself checks:
+   - publisher and aal2 (`private.gear_role()`); for Production, a TOTP `amr` within the step-up
+     window;
+   - the intent belongs to this user and has not expired;
+   - **the pointer is still the reviewed one (CAS)** and **the draft is still the reviewed
+     version**.
+
+   It then inserts the publication (exact bytes and digest; MFA evidence taken from the JWT) and
+   advances `gear_publication_head.current_publication_id`.
+4. **Idempotency:**
+   - a request with a known `operationId` never prepares another publication. If committed, it
+     returns the original (`replayed: true`); if not yet, it commits that same intent;
+   - concurrent duplicates resolve to one intent and one commit; the intent row is locked;
+   - reusing an `operationId` for a different request is `operation_conflict`.
+5. **Rollback** is the same flow with `rollbackOf`: a new revision with a newer `publishedAt`,
+   bound to the reviewed source and baseline.
+
+The Storage catalog write policies and every Storage-path RPC (lease, record, grants, drift
+acknowledgement) are removed from client and service roles by migration `20261114100000`. So the
+commit RPC is the only way to create a publication or move the pointer, short of a direct-SQL
+superuser. Images remain immutable, content-addressed Storage objects (unchanged).
+
+**Read path:** `GET /functions/v1/gear-catalog/{production|staging}` (`verify_jwt = false`).
+- Guests and app users read it with no credentials. It uses only the anon-executable
+  `gear_current_catalog(target)`: one statement, so bytes, digest, revision and `publishedAt`
+  always belong to one publication.
+- It returns the exact bytes (the v1 JSON contract, unchanged), after checking them against
+  their digest.
+- Staging and Production are separate URLs with separate client state.
+
+**Cache behavior:**
+
+| | Production | Staging |
+|---|---|---|
+| `Cache-Control` | `public, max-age=60` | `no-cache` |
+| `ETag` | `"<sha256>"` (gateways may weaken it to `W/"…"`; both forms revalidate) | same |
+| `If-None-Match` | 304 | 304 |
+| Nothing published | 404 | 404 |
+| Errors | 503, `no-store` | same |
+
+The app already sends `If-None-Match`, handles 200 and 304, never clears on another status, and
+accepts only a strictly newer `publishedAt`. So a delayed or cached older response cannot
+regress a client that has a newer one. Remaining exposure: a device that never received the
+newer publication can be served an older complete one by a cache for at most `max-age`
+(Production 60 s).
+
+**Re-run scenarios** (`backend/tests/db_pointer.test.mjs`; evidence lines in the test output):
+
+| Scenario | Result |
+|---|---|
+| Concurrency: 5 publishers from one reviewed state | 1 × 200; 4 × 409 (`live_changed`, `review_stale`); the pointer advanced once |
+| Stale writer: A prepared, delayed 4 s; B commits | A 409 `live_changed` from the database CAS; the pointer and the endpoint serve B; A's intent stays uncommitted |
+| Client gives up mid-request (abort) | Measured: the server **still committed** after the client aborted. The retry with the same `operationId` replayed it; exactly one publication. Asserted to hold either way |
+| Stale writer whose client gave up, then B commits | The newer head stays; retrying A is 409 |
+| Duplicates: one operation sent 5× at once | 5 × 200, 1 original + 4 replays, one revision, one publication |
+| Lost response (commit succeeded, 502 returned) | The retry returns the original (`replayed: true`), no second publication. Reusing the ID for another request: `operation_conflict` |
+| Retry while the original is in flight | One publication; both answers name it |
+| Rollback | New revision, newer `publishedAt`, old content served. A stale rollback is refused; a retry replays |
+| Draft saved between validation and commit | The database refuses (`draft_changed`); nothing committed |
+| Commit RPC called directly | Unknown operation, editor, aal1 and anon refused; intents and their RPCs are service-only |
+| Production step-up at commit | The database refuses a session older than the window; a fresh TOTP commits |
+| Old Storage object | No client can write it. A key-holder write is never served; the verifier reports it as `legacy_storage_object` |
+| Delayed responses vs a client (model of iOS `accept`) | v2 accepted, delayed v1 `rejected(stale)`; 304/404/503 change nothing; the rollback v3 is accepted |
+| Readers during 4 publishes (137 responses) | Every body was exactly a recorded publication and matched its ETag; a sequential reader never went backwards |
+
+**The old-design demonstrations stay reproducible** in `backend/tests/legacy-storage/`
+(54/54, including the PS1b and PS2 hazards asserted without the guard).
+
+**Operation IDs are bound to the publisher, the environment and the request content.**
+- gear-publish fingerprints each request (target, action, review digest, draft version, expected
+  head, rollback source) and stores the fingerprint with the pending intent and, at commit, on
+  the append-only publication (`request_digest`).
+- A retry is recognized from either place and must match the publisher, the target and the
+  fingerprint. Anything else is `operation_conflict`, and nothing about the other request is
+  revealed.
+- The database's commit RPC also refuses another account (`not_your_operation`).
+- Tested (`backend/tests/operations.test.mjs`): a Staging ID reused for Production, pending or
+  committed; four content variants; another publisher account at the database and at the
+  function.
+
+**Pending-operation cleanup without losing replay protection:**
+- `gear_cleanup_operations()` runs hourly (service role, `pg_cron`). It deletes pending intents
+  that expired over an hour ago (they never committed, so a retry just prepares again, bound to
+  the same fingerprint), and committed intents older than 7 days.
+- Replays of committed operations are answered from `gear_catalog_publications.operation_id`
+  and `request_digest`, which are append-only. So cleanup cannot enable a second publication or
+  a cross-boundary replay. Tested after a cleanup that removed committed intents.
+
+**Deployment package** (`backend/deploy/`):
+- `tools/build-deploy-package.mjs` builds `deploy/package/` from allowlisted sources only:
+  - the squashed migration `20261114130000_recommended_gear_admin.sql` (current design only);
+  - `gear-publish` with every `@test-only` region removed;
+  - `gear-catalog`, the shared modules, `functions.toml` and a SHA-256 manifest.
+- It rejects any forbidden string: fault hooks, the legacy function, experimental fixtures,
+  lease/grant/drift names, `local-only`, key-shaped values.
+- `tests/deploy_package.test.mjs` checks:
+  - the committed package equals a fresh build;
+  - an exact file allowlist;
+  - no forbidden content;
+  - unbalanced markers are refused;
+  - the migration has only current-design objects.
+- `tools/check-deploy-package.sh` starts a separate local stack from the package alone (no legacy
+  function, no test-fault switch). It runs the current-design tests against it (34 pass, 6
+  fault-dependent tests skip, 0 fail), including package-only checks: fault headers are inert,
+  and the superseded functions, RPCs, columns, policies and triggers do not exist.
+- It also compares the package schema with the development history
+  (`deploy/schema-comparison.md`): **no unexpected differences**.
+- The comparison found two real gaps, both fixed: a missing `UNIQUE (target, published_at)`, and
+  a bucket that still accepted JSON. The bucket is now images-only, so the old catalog path
+  cannot be written by ordinary uploads.
+
+**Review round 2 (2026-11-14), before hosted testing:**
+- **Images moved to a separate bucket, `recommended-gear-images`.**
+  - The existing `recommended-gear` bucket (old catalog objects, installed builds, the current
+    `publish_catalog.py` publisher) is never altered by the migration: not its settings, policies
+    or objects. The earlier proposal to restrict it to images only was withdrawn.
+  - The app accepts any `https` image URL, so this needs no app change.
+  - `backend/deploy/ROLLOUT.md` separates a fresh-project setup from an existing-project rollout,
+    with preflight and postflight snapshots proving the old bucket is unchanged, and a
+    compatibility table for installed builds, updated builds and the current publisher.
+- **Independent review** of the package and the operation replay and cleanup paths (by a separate
+  agent given only the code and the requirements):
+  - **Fixed, should-fix:** cleanup now keeps a tombstone for each expired pending operation
+    (`private.gear_retired_operations`), so its ID stays bound to its publisher, environment and
+    content. A same-request retry gets `operation_expired`; any other use gets
+    `operation_conflict`. `gear_prepare_intent` refuses a retired or already-published ID.
+  - **Fixed, minor:**
+    - a committed Production operation is replayed even after the step-up window (identity is
+      still checked first);
+    - the step-up window has one source, `gear_settings`;
+    - the read RPC also checks the publication's target;
+    - the functions no longer say "LOCAL implementation";
+    - the functions use a configurable publishable key (`GEAR_PUBLIC_API_KEY`) instead of
+      depending on the legacy JWT anon key;
+    - cleanup scheduling ships as a separate, reviewed `ops/schedule-cleanup.sql`.
+  - **No blockers found.**
+- **Hosted mode** (prepared, not used):
+  - `server.mjs --backend=hosted-test` and `backend/tests/hosted/run-hosted-checks.mjs` both go
+    through one guard, `backend/tools/hosted-target.mjs`. It requires:
+    - an explicit project ref and the exact `https://<ref>.supabase.co` URL;
+    - the production refs to refuse (from the environment, never committed);
+    - a typed confirmation and a publishable key;
+    - no privileged key in the environment.
+  - The hosted harness never resets, seeds, runs SQL or uses a service key. It is read-only unless
+    Staging writes are explicitly enabled, and never publishes to Production.
+  - The functions answer CORS preflights themselves. `backend/tests/cors.test.mjs` goes directly
+    to the function runtime, bypassing local Kong, which otherwise answers preflights and would
+    hide a function that can't.
+
+**App impact:**
+- **iOS:** the smallest change is the two paths in `GearCatalogSource.objectPath` plus their test
+  literals. Installed builds that read the Storage paths keep bundled or last-accepted content
+  and never see new publications. Ship the change before the first Production publication. No
+  Storage mirror is maintained.
+- **Android:** use the endpoint from the start, with the same acceptance rules.
+
+Details: `docs/proposals/ios-catalog-endpoint.md`.
+
 4. **Stamp** `max(now, head + 1, floor)` with a ±300 s guard. **Record** history with status
    `recorded`. **Upload, read back**, and record `verified`, `uncertain` or `conflict`.
 5. **Reconcile** reads first and makes at most one re-send per call (no retry loop). It re-sends
@@ -273,15 +536,29 @@ The scheduled verifier (proposed: every 5 minutes) is **detection only**.
 - direct SQL as `postgres`;
 - the Supabase platform itself.
 
-**Residual risk:** a bypassing write can be served until it is detected and superseded. The only
-complete prevention against privileged writers is signed catalogs, an app change.
+**Residual risk:** a bypassing write can be served until it is detected and superseded.
+Signed catalogs (an app change) would make clients reject content that was not signed by the
+publisher. They would **not** prevent an older, validly signed publication from being written
+over a newer one, and they would not stop clients with no newer copy from accepting it. Ordering
+needs a commit-time check (§6.1, option 1) or a database-served pointer (option 2).
 
 ## 7. Drafts, history, images
 
 - **Drafts:** version lock. Edits typed during a save are kept, and retained edits keep their
   original base (review fixes).
 - **History:** append-only exact bytes, a separate status log, and rollback as a new publication.
-- **Images:** content-addressed, `upsert: false`, PNG/JPEG only.
+- **Images (implemented locally):** `gear-publish?action=upload_image` sniffs the type from the
+  bytes (PNG/JPEG only; HEIF/HEIC refused even when mislabelled), reads dimensions from the header
+  (≤ 8,192 px per side, ≤ 40 MP, ≤ 5 MB), names the object `images/<brand>/<sha256>.<png|jpg>`,
+  and uploads with the caller's JWT and a single-use image grant. Storage RLS allows **insert only**
+  (no overwrite, no delete policy). The function reads the object back and checks its hash.
+- **Verifier (implemented locally, on demand; not scheduled):** read-only. It reports drift,
+  incidents, pending/refused/uncertain statuses, expired leases, missing images and unreferenced
+  images (`deleted: false`), and writes one audit entry. **Nothing is deleted automatically**
+  (D9). Alert delivery stays unresolved (D1); scheduling waits for the hosted tier.
+- **Review binding:** `review` returns a digest of target, draft version or rollback source,
+  baseline bytes, candidate brands and (Production) approvals. Publish recomputes it under the
+  lease and refuses `review_stale` on any difference.
 
 ## 8. Future-dated seed; proposed validator warning (separate change)
 
@@ -385,9 +662,10 @@ Edge Runtime locally. The repository has already replayed its migrations this wa
 local-only config.
 
 **Status:** the local backend exists on branch `claude/admin-backend-local`, with fictional data
-and 28 integration tests passing against a local stack (see its README). Not yet implemented
-locally: image uploads, the scheduled verifier, wiring the UI to the backend, and magic-link
-sign-in.
+and 47 integration tests passing against a local stack, plus a 15-step browser run of the admin UI
+in local-supabase mode (see its README). Implemented locally: Storage write grants, review
+binding, validated image uploads, the on-demand verifier, and the UI with real local sign-in and
+TOTP. Not implemented: magic-link sign-in, scheduling the verifier, and image retention (D9).
 
 **Checks that local covers:**
 - migration replay; RLS; the single-publisher index and publication trigger;
@@ -412,6 +690,19 @@ sign-in.
   `x-metadata` in `user_metadata`, and `amr` in policies;
 - magic-link email delivery;
 - scheduled verifier execution (cron);
+- **gear-catalog (D10):**
+  - a guest with no apikey can call a `verify_jwt = false` function on the hosted gateway;
+  - whether responses are compressed and ETags weakened;
+  - whether any CDN in front of functions honors `Cache-Control` and `ETag`;
+  - invocation limits and latency at the expected request rate;
+- **gear-publish:** the commit RPC called with a hosted-issued user JWT (signing keys, `amr`
+  contents); and whether hosted Edge Functions keep processing after a client disconnect (it
+  committed locally; the design is safe either way);
+- PostgREST's accepted clock skew on expired JWTs (about 30 s locally);
+- CORS on hosted functions (locally the gateway answers preflight itself; the function's own
+  Origin check is what the tests rely on);
+- the Storage API's dry-run RLS and `x-metadata` behavior on the hosted version, and S3 multipart
+  or resumable uploads (TUS), which take a different code path from the standard upload;
 - an iOS TestFlight build reading a staging object over the real network.
 
 **Options for that hosted environment, cheapest first:**
@@ -426,9 +717,18 @@ Exit criteria for B: everything above passes, including the alias/Access verific
 the frontend is hosted in this tier. Each hosted environment, credential or integration created
 here needs Julian's go-ahead.
 
+### Credential remediation: an independent workstream (not gated on the admin or the website)
+
+Credential remediation is tracked **separately** from this admin work. It does not wait for the
+admin, the backend staging tier or the website to be ready: it proceeds on its own schedule now.
+The only coupling is one-way: **verified revocation must be complete before any live admin
+publishing** (tier C, item 1). Nothing in tiers A or B depends on it, and nothing in those tiers
+creates, changes or uses a live credential.
+
 ### C. Production launch (any write to the live project, including `staging/`)
 
-1. **Credential remediation completed and revocation verified**, not merely the migration PRs
+1. **Credential remediation completed and revocation verified** (the independent workstream
+   above; required before live admin publishing, not deferred until then), not merely the migration PRs
    merged:
    - the remediation steps of the credential plan are done;
    - every superseded or exposed key is revoked, or the legacy JWT keys are disabled where planned;
@@ -445,7 +745,13 @@ here needs Julian's go-ahead.
 
    Only after this is the publisher's secret key created.
 2. Private `85Blends-Admin` created by Julian; code moved there deliberately.
-3. The migration reviewed in `E85-Blends-App`, passing tier B, then applied to the live project.
+3. The migration reviewed in `E85-Blends-App`, passing tier B, then applied to the live project. It
+   should be a **squashed** migration containing only the §6.2 design. The local history keeps the
+   superseded Storage-path steps (and drops their policies and grants in `20261114100000`), but
+   the live project never needs them. That migration is
+   `backend/deploy/package/migrations/20261114130000_recommended_gear_admin.sql`, built and
+   checked as above. Exclude `supabase/experimental/` and `gear-legacy-storage-demo` from
+   deployment (enforced by the package build).
 4. Real Auth: TOTP enrolled for Julian, dashboard MFA on, sign-ups confirmed off.
 5. Function code reviewed across the whole project, plus a CI check that only `gear-*` references
    `recommended-gear` (§5).
@@ -454,8 +760,9 @@ here needs Julian's go-ahead.
    production URL, deployment hashes and any branch alias.
 8. **Alert delivery for the verifier and incidents: unresolved decision.**
 9. Far-future incident recovery options decided (the default stays block and report).
-10. **The iOS remote-catalog client released.** Production publishing only reaches users who
-    install it.
+10. **The iOS remote-catalog client released, reading the gear-catalog endpoint** (the two-path
+    change in `docs/proposals/ios-catalog-endpoint.md`). Production publishing only reaches users
+    who install it; builds that read the old Storage paths never see it.
 11. The first Production publication goes through `gear-publish`; the seed is never uploaded raw.
 12. Android is **not** a blocker for an iOS-only launch. **Before Android is enabled** to read the
     catalog, its reader must implement the identical acceptance rules and pass the ported
@@ -468,14 +775,45 @@ here needs Julian's go-ahead.
 | D1 | Alert delivery for the verifier and incidents | Email, push, or another channel | Production launch |
 | D2 | Far-future incident recovery | Restore the previous bytes, a forward-stamped correction, or an app change capping accepted skew (default stays block and report) | Production launch |
 | D3 | Admin URL and deploy method | `<project>.pages.dev` with Access (no DNS change) vs a custom hostname (DNS change); Cloudflare Git integration vs a direct upload with a Pages-only token | Hosting the frontend |
-| D4 | Hosted non-production environment for tier B's hosted-only checks | Free-plan project vs a Pro branch | Backend staging, hosted part |
-| D5 | Production step-up window and JWT lifetime | Proposed 900 s step-up and a short access-token expiry (revocation is function-only, §4) | Production launch |
+| D4 | Hosted non-production environment for tier B's hosted-only checks | A new Free-plan project ($0) **if** Julian confirms the free slot. Verified read-only: one active free project, plus one paused that doesn't count. The quota is per user across organizations, so a new organization does not add one. Otherwise a separate Pro organization (from $25/month). Branching is unavailable on Free. Steps in `docs/proposals/hosted-nonprod-environment.md`. Not created | Backend staging, hosted part |
+| D5 | Production step-up window and JWT lifetime | Proposed 900 s step-up and a short access-token expiry (revocation is function-only, §4). Measured locally: PostgREST accepts an expired JWT for about 30 s after `exp` (refused from +32 s), and a revoked but unexpired JWT until then | Production launch |
 | D6 | HEIF uploads | Stay disabled until a server-side decoder and dimension checks exist | Optional |
 | D7 | Future-timestamp warning in `validate_catalog.py` | Separate iOS tooling PR (`docs/proposals/validator-future-timestamp.md`) | Optional |
-| D8 | Signed catalogs (the only full prevention against key holders) | App change on iOS (and Android when enabled) | Optional, long term |
+| D8 | Signed catalogs: authenticate content against key holders and tampering. Does **not** prevent an older valid signed publication from overwriting a newer one (needs D10) | App change on iOS (and Android when enabled) | Optional, long term |
+| D10 | Commit ordering for catalog writes (§6.1 blocker) | **Decided 2026-11-14: option 2**, the database pointer plus the read endpoint (§6.2). The trigger is experimental evidence only | Done (local) |
+| D11 | Staging catalog visibility | **Decided 2026-11-14:** Staging stays public. It may hold only fictional content or content explicitly approved for public viewing. The admin UI labels it PUBLIC and requires the publisher to confirm before each Staging publish (a UI checkpoint, not a server control). Production partner approval stays a separate requirement. No embedded tester token | Done |
 | D9 | Retention of unreferenced images | e.g. report after 30 days, delete manually | Before image uploads ship |
 
 ## 14. Verification in this session
+
+### Backend branch (local stack, fictional data)
+
+- **Review round (2026-11-14), current design:** `node --test --test-concurrency=1 backend/tests/*.test.mjs`
+  → **44 pass, 0 fail, 2 skipped** (the 2 are package-only checks): database pointer, operations,
+  foundation, review and images, deployment package (static).
+- `backend/tools/check-deploy-package.sh` → the package stack **34 pass, 6 skipped
+  (fault-dependent), 0 fail**; schema comparison: no unexpected differences.
+- Earlier the same day: **D10 option 2:** 34 / 34; browser run (60 s tokens) **19 / 19**.
+- **Superseded Storage path (evidence):** `backend/tests/legacy-storage/*.test.mjs` → **54 / 54**.
+  This includes the PS1b and PS2 hazards, asserted without the guard.
+
+- **Publication-safety review (this round):** `tests/publication_safety.test.mjs` reproduces the
+  §6.1 blocker (unguarded variants) and shows the candidate commit guard closing it. The full
+  suite is **54 / 54**.
+- Browser run **18 / 18**, 7 consecutive, with a 60 s token lifetime. It adds drift
+  acknowledgement, real access-token expiry and revocation-then-expiry. The rollback-step timeout
+  seen once earlier is **unresolved** (not reproduced in 15 runs; cause not identified;
+  diagnostics added).
+- Earlier: `node --test --test-concurrency=1 _admin-prototype/backend/tests/*.test.mjs`: 47 / 47
+  (backend, bypass B1–B9, review binding, origin, images, verifier).
+- Earlier: `node _admin-prototype/backend/tools/ui-local-supabase.mjs`: 15 / 15 browser checks:
+  sign-in + TOTP enrollment, wrong code, outsider refused, simulated API disabled, draft conflict,
+  draft-version and review-digest binding, Staging publish, Production step-up expiry and fresh
+  code, reconcile of an uncertain upload, rollback, image upload with HEIF refused (browser and
+  server), verifier, near-expiry refresh, global sign-out elsewhere, sign-out.
+- Simulated mode unchanged: `tools/ui-regression.cjs` 6 / 6; `tests/*.test.mjs` 56 pass.
+
+### Prototype PR
 
 - `node --test _admin-prototype/tests/*.test.mjs`: **54 pass**.
 - `node _admin-prototype/tools/ui-regression.cjs`: 6 / 6.
