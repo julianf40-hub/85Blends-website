@@ -27,7 +27,7 @@ Development: all migrations in `supabase/migrations/`. Package: only `deploy/pac
 - only in development: `public.gear_storage_drift_acks "aal2 admins read drift acks" SELECT authenticated` (superseded Storage path; expected)
 - only in development: `storage.objects "gear catalog origin read: publisher aal2" SELECT authenticated` (read policy for the superseded catalog objects; nothing in the current design reads them)
 
-## columns (development 86, package 65)
+## columns (development 91, package 70)
 
 - only in development: `private.gear_write_grants.declared_size bigint not null` (superseded Storage path; expected)
 - only in development: `private.gear_write_grants.expires_at timestamp with time zone not null` (superseded Storage path; expected)
@@ -51,7 +51,7 @@ Development: all migrations in `supabase/migrations/`. Package: only `deploy/pac
 - only in development: `public.gear_storage_drift_acks.target text not null` (superseded Storage path; expected)
 - only in development: `public.gear_storage_drift_acks.validation_error text` (superseded Storage path; expected)
 
-## constraints (development 48, package 41)
+## constraints (development 51, package 44)
 
 - only in development: `private.gear_write_grants CHECK ((target = ANY (ARRAY['staging'::text, 'production'::text])))` (superseded Storage path; expected)
 - only in development: `private.gear_write_grants FOREIGN KEY (publication_id) REFERENCES gear_catalog_publications(id)` (superseded Storage path; expected)

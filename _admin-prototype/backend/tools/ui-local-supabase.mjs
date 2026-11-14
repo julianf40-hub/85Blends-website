@@ -100,6 +100,11 @@ const A = await ctxA.newPage(); // publisher
 const Bp = await ctxB.newPage(); // editor
 for (const p of [A, Bp]) p.on('pageerror', (e) => console.log('pageerror:', e.message));
 A.on('response', async (res) => {
+  // gear-publish calls and draft saves (PostgREST RPC); both appear in failure output.
+  if (res.url().includes('/rest/v1/rpc/save_gear_draft')) {
+    fnLog.push({ t: new Date().toISOString().slice(11, 23), action: 'save_gear_draft', status: res.status(), error: res.status() >= 400 ? (await res.text().catch(() => '')).slice(0, 120) : null });
+    return;
+  }
   if (!res.url().includes('/functions/v1/gear-publish')) return;
   let action = null; try { action = JSON.parse(res.request().postData() ?? '{}').action ?? new URL(res.url()).searchParams.get('action'); } catch { /* binary */ }
   let error = null; try { error = res.status() >= 400 ? (await res.json()).error : null; } catch { /* no body */ }

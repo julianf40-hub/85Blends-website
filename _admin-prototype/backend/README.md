@@ -253,7 +253,19 @@ The final version decides on the proposed row in the INSERT phase of the upsert.
 
 ## Local validation
 
-**Review round (current design), 2026-11-14:**
+**Review round 2 (local branch `local/admin-backend-hosted-prep`, not pushed), 2026-11-14:**
+- `tests/*.test.mjs` → 57 tests: 53 pass, 2 skipped (package-only). The 2 failures were tests
+  corrected this round: a CORS check that Kong overwrote, and a cleanup expectation changed by the
+  tombstone fix. Both re-run: `cors` and `operations` **10 / 10**.
+- `tools/check-deploy-package.sh` → package stack **36 pass, 6 skipped (fault-dependent), 0 fail**;
+  schema comparison: no unexpected differences.
+- Legacy demonstrations **54 / 54**. Prototype tests **56 / 56**; simulated UI **6 / 6**.
+- Browser run (60 s tokens): the first run had **1 failure**, a timeout waiting for the "Draft
+  saved" toast at the start of the lost-response step. The re-run passed **19 / 19**.
+  **Unresolved:** cause not identified, like the earlier rollback-step timeout. Diagnostics now
+  also log draft saves.
+
+**Review round 1 (current design), 2026-11-14:**
 - `tests/*.test.mjs` → **44 pass, 0 fail, 2 skipped**. The 2 skipped are `package_mode` checks,
   which run only against the package stack. The suites:
   - database pointer (18);
